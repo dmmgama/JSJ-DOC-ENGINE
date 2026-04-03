@@ -38,6 +38,13 @@ documento técnico JSJ estruturado em Markdown.
 **Regra:** Cowork nunca toca em `04_APP\`.
 Cowork prepara prompts para o agente IDE quando há desenvolvimento.
 
+**Ficheiros por projecto** (fora desta pasta, caminhos definidos em `config.yaml`):
+- `estrutura.yaml` — define o documento (tipo, hierarquia, elementos); reutilizável como template
+- `mapeamento.yaml` — define MD sources e templates DOCX por elemento; específico de cada instância/obra
+
+Estes ficheiros vivem junto ao conteúdo de cada projecto (ex: `CTE-TEMPLATE-CLAUDE\`),
+não dentro do DOC-ENGINE. O DOC-ENGINE lê-os via paths em `config.yaml`.
+
 ---
 
 ## 4. PAPÉIS
@@ -77,6 +84,12 @@ Cowork prepara prompts para o agente IDE quando há desenvolvimento.
    (inclui openpyxl ou pandas — para preprocessor.py)
 6. streamlit run app.py
 ```
+
+Ao arrancar, a app lê `config.yaml` e apresenta a lista de projectos registados.
+O utilizador escolhe qual carregar — os ficheiros `estrutura.yaml` e `mapeamento.yaml`
+do projecto são carregados automaticamente.
+Se não existirem projectos no config, a app abre com ecrã de boas-vindas
+([Novo documento] ou [Importar existente]).
 
 ---
 

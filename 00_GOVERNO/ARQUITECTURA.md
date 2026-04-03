@@ -1,7 +1,7 @@
 # ARQUITECTURA — JSJ-DOC-ENGINE
 
-> **Versão:** 1.0 — Abril 2026
-> **Estado:** MVP em desenvolvimento
+> **Versão:** 1.2 — Abril 2026
+> **Estado:** Fase 1 concluída — Fase 2 em desenvolvimento
 
 ---
 
@@ -71,78 +71,141 @@ qualquer LLM na pipeline de compilação.
 ## 4. ARQUITECTURA DO SISTEMA
 
 ```
-config.yaml
-    │
-    ▼
-compile.py
-    ├── lê secções aplicáveis (include: true)
-    ├── ordena por display_order
-    ├── lê ficheiros MD de cada secção
-    ├── passa cada MD por preprocessor.py
-    │       └── substitui {{ excel | path | sheet | range }}
-    │           por tabelas Markdown geradas do Excel
-    ├── concatena MD processado em stream temporário
-    └── chama Pandoc → DOCX em 03_OUTPUT\
-            │
-            └── usa 02_TEMPLATES\reference.docx
-                    (estilos JSJ)
-
-app.py (Streamlit)
-    ├── lê config.yaml
-    ├── mostra árvore de secções
-    ├── permite reordenar (drag ou setas)
-    ├── permite toggle N/A por secção
-    ├── mostra preview de numeração
-    └── botão "Compilar" → chama compile.py
+config.yaml (multi-projecto)
+        │
+        ▼
+app.py abre → escolha de projecto
+        │
+        ▼
+estrutura.yaml + mapeamento.yaml (auto-load ou import)
+        │
+        ├── Camada 1: editor de estrutura → estrutura.yaml
+        ├── Camada 2: mapeamento sources + templates → mapeamento.yaml
+        ├── Camada 3: TOC interactivo + export/import + snapshot
+        │
+        └── "Compilar" →
+                compile.py
+                    ├── lê mapeamento.yaml
+                    ├── lê MD de cada elemento
+                    ├── preprocessor.py ({{ excel }} → tabelas MD)
+                    ├── concatena MD processado
+                    └── Pandoc → DOCX (template geral ou por elemento)
+                            └── 03_OUTPUT\
 ```
 
 ---
 
-## 5. SCHEMA config.yaml
+## 4a. CAMADAS DA APP
+
+### Camada 1 — Definição do Documento
+O utilizador define o que é o documento e como está organizado:
+- Tipo de documento (CTE, Memória Descritiva, Relatório, etc.)
+- Estrutura hierárquica: Secções → Headings H1–H4 → Anexos
+- Elementos especiais: TOC geral, TOC de figuras, TOC de tabelas
+- Output: `estrutura.yaml`
+
+### Camada 2 — Mapeamento de Conteúdo
+Para cada elemento da estrutura:
+- Qual ficheiro MD é a fonte (pode cobrir secção inteira ou heading específico)
+- Qual template DOCX aplicar (geral ou override por secção)
+- File picker: abre selector de ficheiro numa pasta definida em `config.yaml`
+- Output: `mapeamento.yaml`
+
+### Camada 3 — TOC Interactivo (tab dedicada)
+Visualização e edição da estrutura completa:
+- Toggle de visibilidade por elemento (N/A)
+- Reordenação (setas ou drag)
+- Preview de numeração em tempo real
+- Export/Import `estrutura.yaml` e `mapeamento.yaml` — **funcional desde a primeira iteração**
+- Botão "Compilar DOCX"
+- Função Snapshot (Modo A — ficheiro inteiro / Modo B — divisão por heading com filhos)
+
+---
+
+## 4b. FICHEIROS DE TRABALHO POR DOCUMENTO
+
+| Ficheiro | Conteúdo | Scope |
+|----------|----------|-------|
+| `estrutura.yaml` | Hierarquia do documento (tipo, secções, headings H1-H4, anexos) em YAML | Template reutilizável entre projectos |
+| `mapeamento.yaml` | MD source + template DOCX por elemento em YAML | Específico de cada instância/obra |
+
+Os dois ficheiros são independentes e exportáveis/importáveis separadamente.
+Path de cada ficheiro definido em `config.yaml`.
+
+> Formato YAML escolhido sobre Markdown por ser parseável nativamente
+> em Python (`yaml.safe_load()`), sem parser custom. Standard da
+> comunidade docs-as-code para ficheiros de configuração hierárquicos.
+
+---
+
+## 5. ESTRUTURA DE FICHEIROS EM 04_APP
+
+```
+04_APP\
+├── app.py              ← UI Streamlit (3 camadas + snapshot)
+├── compile.py          ← orquestrador de compilação
+├── preprocessor.py     ← tags {{ excel }} → tabelas MD
+├── config.yaml         ← multi-projecto + paths defaults
+├── requirements.txt
+└── venv\
+```
+
+Ficheiros de trabalho por projecto (fora de `04_APP\`, paths definidos em `config.yaml`):
+- `estrutura.yaml`   ← definição do documento (tipo, hierarquia) — reutilizável como template
+- `mapeamento.yaml`  ← MD sources + templates DOCX por elemento — específico de cada instância/obra
+
+---
+
+## 6. SCHEMA config.yaml (multi-projecto)
 
 ```yaml
-document:
-  id: "CTE-SecI"
-  title: "CTE Fundações e Estruturas — Secção I"
-  output_filename: "CTE_SecI_v1.docx"
+defaults:
+  templates_dir: "C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/02_TEMPLATES"
+  output_dir: "C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/03_OUTPUT"
 
-paths:
-  source_root: "C:/Users/JSJ/JSJ AI/CTE-TEMPLATE-CLAUDE"
-  template_docx: "../02_TEMPLATES/JSJ-CTE-reference.docx"
-  output_dir: "../03_OUTPUT"
+projects:
+  - id: CTE-SecI
+    name: "CTE Fundações e Estruturas"
+    estrutura: "C:/Users/JSJ/JSJ AI/CTE-TEMPLATE-CLAUDE/estrutura.yaml"
+    mapeamento: "C:/Users/JSJ/JSJ AI/CTE-TEMPLATE-CLAUDE/mapeamento.yaml"
 
-sections:
-  - slug: LEX
-    title: "Léxico e Enquadramento Contratual"
-    path: "02_CONTRATUAL/LEX.md"
-    part: "0"
-    display_order: 1
-    include: true
-
-  - slug: GERAL
-    title: "Disposições Gerais"
-    path: "02_CONTRATUAL/GERAL.md"
-    part: "I"
-    display_order: 2
-    include: true
+  - id: MD-Projecto-X
+    name: "Memória Descritiva — Projecto X"
+    estrutura: "C:/Users/JSJ/JSJ AI/Projecto-X/estrutura.yaml"
+    mapeamento: "C:/Users/JSJ/JSJ AI/Projecto-X/mapeamento.yaml"
 ```
+
+### Comportamento de arranque
+
+```
+App abre → lê config.yaml → tem projectos?
+    ├── SIM → lista de projectos → utilizador escolhe → carrega automaticamente
+    └── NÃO → ecrã boas-vindas: [Novo documento] ou [Importar existente]
+```
+
+O utilizador pode sempre adicionar/remover projectos da lista sem apagar ficheiros.
 
 ---
 
-## 6. DECISÕES DE ARQUITECTURA
+## 8. DECISÕES DE ARQUITECTURA
 
 | # | Decisão | Escolha | Alternativa rejeitada |
 |---|---------|---------|----------------------|
 | D1 | Motor compilação | Pandoc | python-docx como motor principal |
 | D2 | Numeração | Gerada no compile step | Embebida nos MD / delegada no Word |
-| D3 | Configuração | config.yaml por documento | Base de dados (Supabase) — fase posterior |
+| D3 | Configuração | config.yaml multi-projecto | Base de dados (Supabase) — fase posterior |
 | D4 | UI | Streamlit local | Web app com deploy |
 | D5 | Scope MVP | Agnóstico de documento | Específico do CTE |
-| D6 | Preprocessador Excel | preprocessor.py independente chamado por compile.py | Excel embedido directamente no MD |
+| D6 | Multi-projecto | config.yaml lista de projectos, escolha no arranque da app | Um config.yaml por documento |
+| D7 | App stateless | estrutura.yaml + mapeamento.yaml como mecanismo de continuidade entre sessões | Estado interno da app |
+| D8 | Snapshot | Sem tocar nos originais; Modo A (ficheiro inteiro) / Modo B (divisão por heading com filhos) | Versionamento inline |
+| D9 | LLM Guide | Ficheiro de contrato de interface entre projectos JSJ e o DOC-ENGINE (`00_GOVERNO/LLM_GUIDE.md`) | Protocolo informal |
+| D10 | Supabase | Fora do scope MVP — arquitectura de MD compatível com migração futura | Supabase no MVP |
+| D11 | Formato ficheiros de estrutura | YAML puro (`estrutura.yaml`, `mapeamento.yaml`) | MD com blocos key:value — frágil, não standard |
 
 ---
 
-## 7. FORA DO SCOPE (MVP)
+## 9. FORA DO SCOPE (MVP)
 
 - Supabase / base de dados
 - Editor de conteúdo MD na app
@@ -153,4 +216,4 @@ sections:
 
 ---
 
-**Fim — ARQUITECTURA.md v1.0 — 2026-04-03**
+**Fim — ARQUITECTURA.md v1.2 — 2026-04-03**
