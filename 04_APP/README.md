@@ -91,8 +91,12 @@ https://pandoc.org/installing.html
 ## 7. ARQUITECTURA DA APP — 3 CAMADAS
 
 ```
-CAMADA 1 — Definição do Documento
-    Tipo, estrutura hierárquica (H1-H4), anexos, TOCs
+CAMADA 1 — Editor de Estrutura do Documento
+    Criar/editar/remover elementos de qualquer documento
+    Campos universais: slug, titulo, tipo, nivel, include, display_order
+    Tipos configuráveis: pré-definidos mas editáveis/apagáveis pelo utilizador
+    Slug: identificador único — explicado ao utilizador, pode ser auto-gerado
+    Agnóstico: sem referência a CTE, MAT, EXEC ou qualquer doc específico
     Output: estrutura.yaml
 
 CAMADA 2 — Mapeamento de Conteúdo

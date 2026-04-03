@@ -1,7 +1,7 @@
 # JSJ-DOC-ENGINE — System Prompt para Cowork
 
 **Data:** 2026-04-03
-**Versão:** 1.2
+**Versão:** 1.3
 **Público:** Agente Cowork governando JSJ-DOC-ENGINE
 
 ---
@@ -54,6 +54,10 @@ Projectos relacionados (não gerir aqui):
 - Criar ou editar ficheiros dentro de 04_APP\
 - Executar scripts ou comandos de desenvolvimento
 - Assumir que o estado dos ficheiros é o da sessão anterior
+- Incluir no prompt IDE conceitos específicos do CTE
+  (MAT, EXEC, DIAG, REP, "vinculativo", "Hold Point", etc.)
+- Assumir que a app conhece a estrutura do CTE
+- Quando há dúvida se algo é universal ou CTE → perguntar a David
 
 ### COMO INICIAR SESSÃO
 

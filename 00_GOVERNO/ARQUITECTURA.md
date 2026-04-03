@@ -43,10 +43,24 @@ A JSJ trabalha em Word. O sistema adapta-se à JSJ,
 não o contrário. Qualquer evolução futura mantém este output.
 
 ### P5 — Agnóstico de documento
-O sistema não conhece o CTE, nem memórias descritivas,
-nem qualquer documento específico. Conhece apenas:
-secções com slug, título, path MD, ordem e inclusão.
-O documento é definido no `config.yaml`.
+A app não conhece o CTE nem qualquer documento JSJ específico.
+Conhece elementos com: slug, titulo, tipo (configurável),
+nivel (1-4), include (bool), display_order.
+Os tipos são configuráveis por documento — pré-definidos como
+ponto de partida, mas editáveis, renomeáveis e apagáveis.
+O slug é opcional — pode ser gerado automaticamente pela app.
+
+---
+
+## 2a. AGNOSTICISMO DA APP
+
+A app não conhece nenhum documento JSJ específico.
+Conhece apenas: slug, titulo, tipo, nivel, include, display_order.
+Os tipos são configuráveis pelo utilizador por documento.
+O slug é o identificador único — pode ser gerado automaticamente.
+
+Qualquer conceito específico de um documento (ex: MAT, EXEC,
+"vinculativo") vive nos ficheiros YAML do projecto, não na app.
 
 ---
 
@@ -128,9 +142,10 @@ Visualização e edição da estrutura completa:
 |----------|----------|-------|
 | `estrutura.yaml` | Hierarquia do documento (tipo, secções, headings H1-H4, anexos) em YAML | Template reutilizável entre projectos |
 | `mapeamento.yaml` | MD source + template DOCX por elemento em YAML | Específico de cada instância/obra |
+| `variaveis.yaml` *(opcional)* | Variáveis `{{ VARIAVEL }}` substituídas pelo preprocessor.py antes da compilação | Específico de cada instância/obra |
 
-Os dois ficheiros são independentes e exportáveis/importáveis separadamente.
-Path de cada ficheiro definido em `config.yaml`.
+Os ficheiros são independentes e exportáveis/importáveis separadamente.
+Path de cada ficheiro definido em `config.yaml` (campo `variaveis:` opcional).
 
 > Formato YAML escolhido sobre Markdown por ser parseável nativamente
 > em Python (`yaml.safe_load()`), sem parser custom. Standard da
@@ -168,6 +183,7 @@ projects:
     name: "CTE Fundações e Estruturas"
     estrutura: "C:/Users/JSJ/JSJ AI/CTE-TEMPLATE-CLAUDE/estrutura.yaml"
     mapeamento: "C:/Users/JSJ/JSJ AI/CTE-TEMPLATE-CLAUDE/mapeamento.yaml"
+    variaveis: "C:/Users/JSJ/JSJ AI/CTE-TEMPLATE-CLAUDE/variaveis.yaml"  # opcional
 
   - id: MD-Projecto-X
     name: "Memória Descritiva — Projecto X"

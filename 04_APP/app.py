@@ -1,6 +1,7 @@
 """
-app.py — JSJ-DOC-ENGINE — Camada 3
-TOC interactivo, export/import de estrutura.yaml e mapeamento.yaml.
+app.py — JSJ-DOC-ENGINE — Camadas 1 e 3
+Camada 1: Editor de Estrutura do Documento
+Camada 3: TOC interactivo, export/import de estrutura.yaml e mapeamento.yaml.
 """
 
 import copy
@@ -40,6 +41,10 @@ PROJECTO_MOCK = {
 # ---------------------------------------------------------------------------
 # Inicialização do estado da sessão
 # ---------------------------------------------------------------------------
+# Tipos pré-definidos usados quando o YAML não declara tipos_disponiveis
+TIPOS_PREDEFINIDOS = ["seccao", "heading", "anexo", "toc", "front_matter"]
+
+
 def inicializar_estado() -> None:
     """Garante que todas as chaves de session_state existem."""
     if "elementos" not in st.session_state:
@@ -52,6 +57,15 @@ def inicializar_estado() -> None:
         st.session_state.export_path_estrutura = ""
     if "export_path_mapeamento" not in st.session_state:
         st.session_state.export_path_mapeamento = ""
+    # Camada 1 — estrutura YAML completa (dict raw) do projecto activo
+    if "estrutura_yaml_raw" not in st.session_state:
+        st.session_state.estrutura_yaml_raw = {}
+    # Camada 1 — path do estrutura.yaml carregado
+    if "estrutura_yaml_path" not in st.session_state:
+        st.session_state.estrutura_yaml_path = ""
+    # Camada 1 — flag para confirmar remoção de elemento
+    if "confirmar_remover" not in st.session_state:
+        st.session_state.confirmar_remover = None
 
 
 # ---------------------------------------------------------------------------
@@ -295,6 +309,249 @@ def limpar_chaves_checkboxes(elementos: list) -> None:
 
 
 # ===========================================================================
+# CAMADA 1 — EDITOR DE ESTRUTURA: funções auxiliares
+# ===========================================================================
+
+def _obter_tipos(raw: dict) -> list:
+    """Devolve lista de tipos do dict raw do estrutura.yaml.
+
+    Se o campo tipos_disponiveis não existir, devolve os tipos pré-definidos.
+    """
+    tipos = raw.get("tipos_disponiveis")
+    if isinstance(tipos, list) and tipos:
+        return tipos
+    return list(TIPOS_PREDEFINIDOS)
+
+
+def _todos_slugs(elementos: list) -> list:
+    """Recolhe recursivamente todos os slugs presentes na lista de elementos."""
+    slugs = []
+    for el in elementos:
+        if isinstance(el, dict):
+            s = el.get("slug", "")
+            if s:
+                slugs.append(s)
+            filhos = el.get("filhos") or []
+            if filhos:
+                slugs.extend(_todos_slugs(filhos))
+    return slugs
+
+
+def _auto_slug(elementos: list) -> str:
+    """Gera um slug único no formato elem-NNN."""
+    slugs_existentes = set(_todos_slugs(elementos))
+    i = 1
+    while True:
+        candidato = f"elem-{i:03d}"
+        if candidato not in slugs_existentes:
+            return candidato
+        i += 1
+
+
+def _elemento_vazio(slug: str) -> dict:
+    """Cria um elemento novo com valores por defeito."""
+    return {
+        "slug":          slug,
+        "titulo":        "",
+        "tipo":          "heading",
+        "nivel":         1,
+        "display_order": 0,
+        "include":       True,
+    }
+
+
+def _validar_elementos(elementos: list) -> list:
+    """Valida slugs únicos e títulos não vazios. Devolve lista de mensagens de erro."""
+    erros = []
+    slugs = _todos_slugs(elementos)
+    vistos = set()
+    duplicados = set()
+    for s in slugs:
+        if s in vistos:
+            duplicados.add(s)
+        vistos.add(s)
+    for slug in duplicados:
+        erros.append(f"Slug duplicado: **{slug}**")
+
+    def _verificar_titulos(lista: list) -> None:
+        for el in lista:
+            if not isinstance(el, dict):
+                continue
+            if not el.get("titulo", "").strip():
+                erros.append(f"Título vazio no elemento `{el.get('slug', '?')}`")
+            filhos = el.get("filhos") or []
+            if filhos:
+                _verificar_titulos(filhos)
+
+    _verificar_titulos(elementos)
+    return erros
+
+
+def _renderizar_formulario_elemento(el: dict, prefixo: str, tipos: list, elementos_raiz: list) -> None:
+    """Renderiza o formulário inline de um elemento (edit in place).
+
+    Modifica el directamente via st widgets com chaves únicas por prefixo.
+    """
+    col_slug, col_titulo, col_tipo, col_nivel, col_ord, col_inc = st.columns(
+        [2, 3, 2, 1, 1, 1]
+    )
+
+    # ── slug ──────────────────────────────────────────────────────────────
+    novo_slug = col_slug.text_input(
+        "Slug",
+        value=el.get("slug", ""),
+        key=f"{prefixo}_slug",
+        help="⚠️ Imutável após criação — alterar aqui requer actualizar mapeamento.yaml",
+        label_visibility="collapsed",
+    )
+    el["slug"] = novo_slug.strip()
+
+    # ── titulo ────────────────────────────────────────────────────────────
+    novo_titulo = col_titulo.text_input(
+        "Título",
+        value=el.get("titulo", ""),
+        key=f"{prefixo}_titulo",
+        label_visibility="collapsed",
+    )
+    el["titulo"] = novo_titulo
+
+    # ── tipo ──────────────────────────────────────────────────────────────
+    tipo_actual = el.get("tipo", "heading")
+    idx_tipo = tipos.index(tipo_actual) if tipo_actual in tipos else 0
+    novo_tipo = col_tipo.selectbox(
+        "Tipo",
+        options=tipos,
+        index=idx_tipo,
+        key=f"{prefixo}_tipo",
+        label_visibility="collapsed",
+    )
+    el["tipo"] = novo_tipo
+
+    # ── nivel (só para headings) ──────────────────────────────────────────
+    if novo_tipo == "heading":
+        nivel_actual = el.get("nivel", 1)
+        if not isinstance(nivel_actual, int):
+            nivel_actual = 1
+        novo_nivel = col_nivel.number_input(
+            "Nível",
+            min_value=1, max_value=4,
+            value=nivel_actual,
+            key=f"{prefixo}_nivel",
+            label_visibility="collapsed",
+        )
+        el["nivel"] = int(novo_nivel)
+    else:
+        col_nivel.markdown("")
+
+    # ── display_order ─────────────────────────────────────────────────────
+    ordem_actual = el.get("display_order", 0)
+    if not isinstance(ordem_actual, (int, float)):
+        ordem_actual = 0
+    novo_ordem = col_ord.number_input(
+        "Ordem",
+        value=int(ordem_actual),
+        key=f"{prefixo}_order",
+        label_visibility="collapsed",
+    )
+    el["display_order"] = int(novo_ordem)
+
+    # ── include ───────────────────────────────────────────────────────────
+    novo_inc = col_inc.checkbox(
+        "Incluir",
+        value=bool(el.get("include", True)),
+        key=f"{prefixo}_inc",
+        label_visibility="collapsed",
+    )
+    el["include"] = novo_inc
+
+
+def _renderizar_elemento(el: dict, profundidade: int, prefixo: str,
+                          tipos: list, elementos_raiz: list, idx_pai_path: str) -> None:
+    """Renderiza recursivamente um elemento e os seus filhos."""
+    margem = "　" * profundidade  # espaço de indentação visual
+    rotulo_tipo = el.get("tipo", "heading")
+    slug_disp   = el.get("slug") or "—"
+
+    with st.expander(f"{margem}**{slug_disp}** · *{rotulo_tipo}*", expanded=False):
+        # Cabeçalho das colunas do formulário
+        c1, c2, c3, c4, c5, c6 = st.columns([2, 3, 2, 1, 1, 1])
+        c1.caption("Slug ⚠️"); c2.caption("Título"); c3.caption("Tipo")
+        c4.caption("Nível"); c5.caption("Ordem"); c6.caption("Inc.")
+
+        _renderizar_formulario_elemento(el, prefixo, tipos, elementos_raiz)
+
+        # Botões de acção
+        col_filho, col_rem, _ = st.columns([2, 2, 6])
+
+        if col_filho.button("➕ Filho", key=f"{prefixo}_add_filho"):
+            filhos = el.setdefault("filhos", [])
+            novo_slug = _auto_slug(elementos_raiz)
+            filhos.append(_elemento_vazio(novo_slug))
+            st.rerun()
+
+        # Confirmação de remoção
+        if st.session_state.confirmar_remover == prefixo:
+            st.warning("Confirmar remoção deste elemento?")
+            col_sim, col_nao, _ = st.columns([1, 1, 8])
+            if col_sim.button("Sim", key=f"{prefixo}_rem_sim"):
+                st.session_state.confirmar_remover = None
+                # Sinaliza remoção via flag no próprio elemento
+                el["_remover"] = True
+                st.rerun()
+            if col_nao.button("Não", key=f"{prefixo}_rem_nao"):
+                st.session_state.confirmar_remover = None
+                st.rerun()
+        else:
+            if col_rem.button("🗑 Remover", key=f"{prefixo}_rem"):
+                st.session_state.confirmar_remover = prefixo
+                st.rerun()
+
+        # Filhos recursivos
+        filhos = el.get("filhos") or []
+        if filhos:
+            st.divider()
+            _renderizar_lista_elementos(filhos, profundidade + 1, prefixo, tipos, elementos_raiz)
+
+        # Limpar filhos marcados para remoção
+        if filhos:
+            el["filhos"] = [f for f in filhos if not f.get("_remover")]
+
+
+def _renderizar_lista_elementos(lista: list, profundidade: int, prefixo_base: str,
+                                 tipos: list, elementos_raiz: list) -> None:
+    """Itera a lista e renderiza cada elemento."""
+    for i, el in enumerate(lista):
+        if not isinstance(el, dict):
+            continue
+        prefixo = f"{prefixo_base}_{i}"
+        _renderizar_elemento(el, profundidade, prefixo, tipos, elementos_raiz)
+
+
+def _carregar_estrutura_yaml_ficheiro(caminho: str) -> dict:
+    """Lê e faz parse de um ficheiro estrutura.yaml. Devolve dict ou {}."""
+    try:
+        with open(caminho, encoding="utf-8") as f:
+            dados = yaml.safe_load(f) or {}
+        return dados
+    except Exception:
+        return {}
+
+
+def _guardar_estrutura_yaml_ficheiro(caminho: str, dados: dict) -> tuple:
+    """Serializa e escreve o dict para o ficheiro. Devolve (ok, msg)."""
+    try:
+        pasta = os.path.dirname(caminho)
+        if pasta:
+            os.makedirs(pasta, exist_ok=True)
+        with open(caminho, "w", encoding="utf-8") as f:
+            yaml.dump(dados, f, allow_unicode=True,
+                      default_flow_style=False, sort_keys=False)
+        return True, f"Estrutura guardada em: {caminho}"
+    except Exception as exc:
+        return False, f"Erro ao guardar: {exc}"
+
+
+# ===========================================================================
 # LAYOUT PRINCIPAL
 # ===========================================================================
 inicializar_estado()
@@ -345,10 +602,14 @@ with st.sidebar:
         conteudo_est = ficheiro_est.read().decode("utf-8")
         novos_elementos = parse_estrutura_yaml(conteudo_est)
         if novos_elementos:
-            limpar_chaves_checkboxes(st.session_state.elementos)
-            st.session_state.elementos = novos_elementos
-            st.success(f"Importados {len(novos_elementos)} elementos.")
-            st.rerun()
+            # Evitar reimport em cada rerun — só actualiza se slug set mudar
+            slugs_novos = {el["slug"] for el in novos_elementos}
+            slugs_actuais = {el["slug"] for el in st.session_state.elementos}
+            if slugs_novos != slugs_actuais:
+                limpar_chaves_checkboxes(st.session_state.elementos)
+                st.session_state.elementos = novos_elementos
+                st.toast(f"✅ Estrutura importada: {len(novos_elementos)} elementos.", icon="✅")
+                st.rerun()
         else:
             st.warning("Nenhum elemento encontrado no ficheiro importado.")
 
@@ -387,76 +648,212 @@ with st.sidebar:
     if ficheiro_map is not None:
         conteudo_map = ficheiro_map.read().decode("utf-8")
         mapeamento_importado = parse_mapeamento_yaml(conteudo_map)
-        st.session_state.mapeamento = mapeamento_importado
-        n_el = len(mapeamento_importado.get("elementos", []))
-        st.success(f"Mapeamento importado: {n_el} elementos.")
+        # Só actualiza e notifica se o mapeamento mudou (evitar toast em cada rerun)
+        meta_nova = mapeamento_importado.get("meta", {})
+        meta_actual = st.session_state.mapeamento.get("meta", {})
+        if meta_nova != meta_actual:
+            st.session_state.mapeamento = mapeamento_importado
+            n_el = len(mapeamento_importado.get("elementos", []))
+            st.toast(f"✅ Mapeamento importado: {n_el} elementos.", icon="✅")
 
 # ---------------------------------------------------------------------------
-# Main — TOC interactivo
+# Tabs principais — Camada 3 (TOC) e Camada 1 (Estrutura)
 # ---------------------------------------------------------------------------
-st.header("TOC — Estrutura do Documento")
+tab_toc, tab_estrutura = st.tabs(["TOC / Compilar", "Estrutura"])
 
-elementos_com_num = calcular_numeracao(st.session_state.elementos)
-n_total = len(elementos_com_num)
 
-# Cabeçalho da tabela
-col_h_ord, col_h_slug, col_h_tit, col_h_na, col_h_up, col_h_dn = st.columns(
-    [1, 2, 7, 1, 1, 1]
-)
-col_h_ord.markdown("**#**")
-col_h_slug.markdown("**Slug**")
-col_h_tit.markdown("**Título**")
-col_h_na.markdown("**N/A**")
-col_h_up.markdown("**↑**")
-col_h_dn.markdown("**↓**")
-st.divider()
+# ===========================================================================
+# TAB 1 — TOC / Compilar (Camada 3, sem alterações)
+# ===========================================================================
+with tab_toc:
+    st.header("TOC — Estrutura do Documento")
 
-# Linhas do TOC
-for idx, el in enumerate(elementos_com_num):
-    col_ord, col_slug, col_tit, col_na, col_up, col_dn = st.columns(
+    elementos_com_num = calcular_numeracao(st.session_state.elementos)
+    n_total = len(elementos_com_num)
+
+    # Cabeçalho da tabela
+    col_h_ord, col_h_slug, col_h_tit, col_h_na, col_h_up, col_h_dn = st.columns(
         [1, 2, 7, 1, 1, 1]
     )
+    col_h_ord.markdown("**#**")
+    col_h_slug.markdown("**Slug**")
+    col_h_tit.markdown("**Título**")
+    col_h_na.markdown("**N/A**")
+    col_h_up.markdown("**↑**")
+    col_h_dn.markdown("**↓**")
+    st.divider()
 
-    # Número ou travessão
-    col_ord.markdown(el["ordem_display"])
+    # Linhas do TOC
+    for idx, el in enumerate(elementos_com_num):
+        col_ord, col_slug, col_tit, col_na, col_up, col_dn = st.columns(
+            [1, 2, 7, 1, 1, 1]
+        )
 
-    # Slug em código
-    col_slug.markdown(f"`{el['slug']}`")
+        # Número ou travessão
+        col_ord.markdown(el["ordem_display"])
 
-    # Título — riscado se não incluído
-    if el["incluir"]:
-        col_tit.markdown(el["titulo"])
-    else:
-        col_tit.markdown(f"~~{el['titulo']}~~")
+        # Slug em código
+        col_slug.markdown(f"`{el['slug']}`")
 
-    # Checkbox incluir — toggle N/A
-    novo_valor = col_na.checkbox(
-        label="incluir",
-        value=el["incluir"],
-        key=f"chk_{el['slug']}",
-        label_visibility="collapsed",
+        # Título — riscado se não incluído
+        if el["incluir"]:
+            col_tit.markdown(el["titulo"])
+        else:
+            col_tit.markdown(f"~~{el['titulo']}~~")
+
+        # Checkbox incluir — toggle N/A
+        novo_valor = col_na.checkbox(
+            label="incluir",
+            value=el["incluir"],
+            key=f"chk_{el['slug']}",
+            label_visibility="collapsed",
+        )
+        if novo_valor != el["incluir"]:
+            st.session_state.elementos[idx]["incluir"] = novo_valor
+            st.rerun()
+
+        # Botão mover para cima
+        if col_up.button("↑", key=f"up_{el['slug']}", disabled=(idx == 0)):
+            mover_elemento_cima(idx)
+            st.rerun()
+
+        # Botão mover para baixo
+        if col_dn.button("↓", key=f"dn_{el['slug']}", disabled=(idx == n_total - 1)):
+            mover_elemento_baixo(idx)
+            st.rerun()
+
+    # Footer — botão Compilar DOCX (stub desactivado)
+    st.divider()
+    st.button(
+        "Compilar DOCX",
+        disabled=True,
+        use_container_width=True,
+        help="Disponível após configurar mapeamento (Camada 2)",
     )
-    if novo_valor != el["incluir"]:
-        st.session_state.elementos[idx]["incluir"] = novo_valor
+
+
+# ===========================================================================
+# TAB 2 — Editor de Estrutura (Camada 1)
+# ===========================================================================
+with tab_estrutura:
+    st.header("Editor de Estrutura")
+
+    # ── Carregar ficheiro estrutura.yaml ─────────────────────────────────
+    path_est_default = st.session_state.export_path_estrutura or paths_cfg.get("estrutura", "")
+    path_est_c1 = st.text_input(
+        "Path do estrutura.yaml",
+        value=st.session_state.estrutura_yaml_path or path_est_default,
+        key="c1_path_estrutura",
+        placeholder=r"C:\caminho\para\estrutura.yaml",
+    )
+    st.session_state.estrutura_yaml_path = path_est_c1.strip()
+
+    col_load, col_reload, _ = st.columns([2, 2, 6])
+    if col_load.button("Carregar ficheiro", key="c1_btn_load"):
+        if not path_est_c1.strip():
+            st.error("Defina o path do ficheiro antes de carregar.")
+        elif not Path(path_est_c1.strip()).exists():
+            st.error(f"Ficheiro não encontrado: {path_est_c1.strip()}")
+        else:
+            st.session_state.estrutura_yaml_raw = _carregar_estrutura_yaml_ficheiro(
+                path_est_c1.strip()
+            )
+            st.success("Ficheiro carregado.")
+            st.rerun()
+
+    raw: dict = st.session_state.estrutura_yaml_raw
+
+    # Se não há dados carregados, mostrar mensagem e parar
+    if not raw:
+        st.info("Carregue um ficheiro estrutura.yaml para começar a editar.")
+        st.stop()
+
+    st.divider()
+
+    # ── Metadados do documento ───────────────────────────────────────────
+    with st.expander("Metadados do documento", expanded=False):
+        col_dt, col_tit_doc = st.columns([2, 5])
+        raw["doc_type"]  = col_dt.text_input("doc_type",  value=raw.get("doc_type", ""),  key="c1_doc_type")
+        raw["doc_title"] = col_tit_doc.text_input("doc_title", value=raw.get("doc_title", ""), key="c1_doc_title")
+
+    st.divider()
+
+    # ── Tipos disponíveis ─────────────────────────────────────────────────
+    st.subheader("Tipos disponíveis")
+
+    tipos = _obter_tipos(raw)
+    # Garantir que o campo existe no raw (criá-lo se necessário)
+    raw.setdefault("tipos_disponiveis", list(tipos))
+
+    # Listar tipos com opção de apagar
+    tipos_actualizados = []
+    for t in list(raw["tipos_disponiveis"]):
+        col_t_nome, col_t_rename, col_t_del = st.columns([3, 3, 1])
+        col_t_nome.markdown(f"`{t}`")
+        novo_nome = col_t_rename.text_input(
+            "Renomear", value=t, key=f"c1_tipo_rename_{t}",
+            label_visibility="collapsed"
+        )
+        apagar = col_t_del.button("🗑", key=f"c1_tipo_del_{t}", help=f"Apagar tipo {t}")
+        if not apagar:
+            tipos_actualizados.append(novo_nome.strip() if novo_nome.strip() else t)
+
+    raw["tipos_disponiveis"] = tipos_actualizados
+    tipos = raw["tipos_disponiveis"]  # referência actualizada
+
+    # Adicionar novo tipo
+    col_novo_tipo, col_btn_tipo, _ = st.columns([3, 2, 5])
+    novo_tipo_input = col_novo_tipo.text_input(
+        "Novo tipo", key="c1_novo_tipo_input", placeholder="nome-do-tipo",
+        label_visibility="collapsed"
+    )
+    if col_btn_tipo.button("Adicionar tipo", key="c1_btn_add_tipo"):
+        nome_limpo = novo_tipo_input.strip()
+        if nome_limpo and nome_limpo not in tipos:
+            raw["tipos_disponiveis"].append(nome_limpo)
+            st.rerun()
+        elif nome_limpo in tipos:
+            st.warning(f"Tipo `{nome_limpo}` já existe.")
+
+    st.divider()
+
+    # ── Lista de elementos ────────────────────────────────────────────────
+    st.subheader("Elementos")
+
+    elementos_raw: list = raw.setdefault("elementos", [])
+
+    # Cabeçalho das colunas
+    ch1, ch2, ch3, ch4, ch5, ch6 = st.columns([2, 3, 2, 1, 1, 1])
+    ch1.caption("Slug"); ch2.caption("Título"); ch3.caption("Tipo")
+    ch4.caption("Nível"); ch5.caption("Ordem"); ch6.caption("Inc.")
+
+    _renderizar_lista_elementos(elementos_raw, 0, "c1_el", tipos, elementos_raw)
+
+    # Limpar elementos raiz marcados para remoção
+    raw["elementos"] = [el for el in elementos_raw if not el.get("_remover")]
+
+    # Botão novo elemento no nível raiz
+    if st.button("➕ Novo elemento", key="c1_btn_novo_el"):
+        novo_slug = _auto_slug(raw["elementos"])
+        raw["elementos"].append(_elemento_vazio(novo_slug))
         st.rerun()
 
-    # Botão mover para cima
-    if col_up.button("↑", key=f"up_{el['slug']}", disabled=(idx == 0)):
-        mover_elemento_cima(idx)
-        st.rerun()
+    st.divider()
 
-    # Botão mover para baixo
-    if col_dn.button("↓", key=f"dn_{el['slug']}", disabled=(idx == n_total - 1)):
-        mover_elemento_baixo(idx)
-        st.rerun()
+    # ── Validação e guardar ───────────────────────────────────────────────
+    erros = _validar_elementos(raw.get("elementos", []))
+    if erros:
+        for msg_erro in erros:
+            st.error(msg_erro)
 
-# ---------------------------------------------------------------------------
-# Footer — botão Compilar DOCX (stub desactivado)
-# ---------------------------------------------------------------------------
-st.divider()
-st.button(
-    "Compilar DOCX",
-    disabled=True,
-    use_container_width=True,
-    help="Disponível após configurar mapeamento (Camada 2)",
-)
+    if st.button("💾 Guardar estrutura", key="c1_btn_guardar",
+                 disabled=bool(erros), use_container_width=True):
+        if not path_est_c1.strip():
+            st.error("Defina o path antes de guardar.")
+        else:
+            ok, msg = _guardar_estrutura_yaml_ficheiro(path_est_c1.strip(), raw)
+            if ok:
+                st.success(msg)
+            else:
+                st.error(msg)
+

@@ -1,7 +1,7 @@
 # ROADMAP — JSJ-DOC-ENGINE
 
-> **Versão:** 1.4 — Abril 2026
-> **Estado:** 🟢 Fase 1 concluída — Fase 2 em curso (Camada 3 ✅)
+> **Versão:** 1.7 — Abril 2026
+> **Estado:** 🟢 Fase 1 concluída — Fase 2 em curso (Camada 3 ✅, D11 YAML ✅, Camada 1 ✅)
 > **Documento de referência:** `README.md` (raiz)
 
 ---
@@ -35,11 +35,13 @@
 - [x] Camada 3: Export/Import `estrutura.yaml` e `mapeamento.yaml`
 - [x] Camada 3: Preview de numeração em tempo real
 - [x] Camada 3: Toggle N/A + reordenação com setas
-- [ ] Camada 1: Editor de estrutura do documento
+- [x] Migração parsers MD → YAML (D11) — `parse_estrutura_yaml()`, `parse_mapeamento_yaml()` — testado com 68 elementos ✅
+- [x] Camada 1: Editor de estrutura do documento
+- [ ] config.yaml multi-projecto + auto-load no arranque
+- [ ] `variaveis.yaml` por projecto + substituição `{{ VARIAVEL }}` no preprocessor.py  *(depende do config.yaml multi-projecto — schema inclui campo `variaveis:`)*
 - [ ] Camada 2: Mapeamento MD sources + templates DOCX
 - [ ] Função Snapshot (Modo A ficheiro inteiro + Modo B divisão por heading com filhos)
 - [ ] Integração: app.py → compile.py → DOCX real
-- [ ] config.yaml multi-projecto + auto-load no arranque
 
 **Gate:** David consegue compilar um DOCX parcial sem abrir terminal.
 
@@ -81,4 +83,34 @@
 
 ---
 
-**Fim — ROADMAP.md v1.4 — 2026-04-03**
+---
+
+## DETALHE CAMADA 1 (implementado 2026-04-03)
+
+Funções auxiliares em `app.py`:
+
+| Função | Responsabilidade |
+|--------|-----------------|
+| `_obter_tipos(raw)` | Lê `tipos_disponiveis` do YAML ou usa os pré-definidos |
+| `_todos_slugs(lista)` | Recolhe recursivamente todos os slugs (incluindo filhos) |
+| `_auto_slug(lista)` | Gera slug único `elem-001`, `elem-002`, … |
+| `_elemento_vazio(slug)` | Cria elemento novo com valores por defeito |
+| `_validar_elementos(lista)` | Detecta slugs duplicados e títulos vazios |
+| `_renderizar_formulario_elemento(...)` | Formulário inline por elemento (6 colunas) |
+| `_renderizar_elemento(...)` | Expander por elemento + botões Filho/Remover + recursão |
+| `_renderizar_lista_elementos(...)` | Itera a lista e delega para `_renderizar_elemento` |
+| `_carregar_estrutura_yaml_ficheiro(path)` | Lê e faz parse do YAML do disco |
+| `_guardar_estrutura_yaml_ficheiro(path, dict)` | Serializa e escreve de volta ao disco |
+
+Estado de sessão adicionado (sem conflito com Camada 3):
+- `estrutura_yaml_raw` — dict raw do YAML carregado
+- `estrutura_yaml_path` — path do ficheiro activo
+- `confirmar_remover` — flag de confirmação de remoção
+
+Layout: `st.tabs(["TOC / Compilar", "Estrutura"])` — TOC é o tab default.
+
+Tab "Estrutura": carregar ficheiro → metadados → tipos disponíveis (adicionar/renomear/apagar) → lista de elementos hierárquica editável → validação inline → guardar.
+
+---
+
+**Fim — ROADMAP.md v1.7 — 2026-04-03**
