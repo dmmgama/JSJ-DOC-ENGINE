@@ -1,38 +1,16 @@
-document:
-  id: "CTE-SecI"
-  title: "CTE Fundações e Estruturas — Secção I"
-  output_filename: "CTE_SecI_v1.docx"
-
-paths:
-  source_root: "C:/Users/JSJ/JSJ AI/CTE/CTE-TEMPLATE-CLAUDE"
-  template_docx: "../02_TEMPLATES/JSJ-CTE-reference.docx"
-  output_dir: "../03_OUTPUT"
-
-sections:
-  - slug: LEX
-    title: "Léxico e Enquadramento Contratual"
-    path: "02_CONTRATUAL/LEX.md"
-    part: "I"
-    display_order: 1
-    include: true
-
-  - slug: GERAL
-    title: "Disposições Gerais"
-    path: "02_CONTRATUAL/GERAL.md"
-    part: "I"
-    display_order: 2
-    include: true
-
-  - slug: SPEC_LEXICO
-    title: "SPEC — Léxico e Enquadramento Contratual (Secção I.A)"
-    path: "02_CONTRATUAL/SPEC_LEXICO.md"
-    part: "I"
-    display_order: 3
-    include: false
-
-  - slug: SPEC_GERAL
-    title: "SPEC — Disposições Gerais (Secção I.B)"
-    path: "02_CONTRATUAL/SPEC_DISPOSICOES_GERAIS.md"
-    part: "I"
-    display_order: 4
-    include: false
+defaults:
+  output_dir: C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/03_OUTPUT
+  reference_doc: C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/02_TEMPLATES/JSJ-CTE-reference.docx
+  templates_dir: C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/02_TEMPLATES
+last_project: CTE-SecI
+projects:
+- estrutura: C:/Users/JSJ/JSJ AI/CTE/CTE-TEMPLATE-CLAUDE/estrutura_v2.yaml
+  id: CTE-SecI
+  mapeamento: C:/Users/JSJ/JSJ AI/CTE/CTE-TEMPLATE-CLAUDE/mapeamento.yaml
+  name: CTE Fundações e Estruturas
+  variaveis: ''
+- estrutura: C:\Users\JSJ\JSJ AI\CTE
+  id: aaa
+  mapeamento: C:\Users\JSJ\JSJ AI\CTE
+  name: aaa
+  variaveis: C:\Users\JSJ\JSJ AI\CTE

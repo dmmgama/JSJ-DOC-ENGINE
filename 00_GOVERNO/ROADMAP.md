@@ -41,10 +41,10 @@
       → Prompt IDE: `PROMPT-IDE-SCHEMA-V2.md` | Decisão: `DECISAO-SCHEMA-V2.md`
       → Entregas: `semantic_type_registry.py`, `migrate_schema_v1_to_v2.py`, `filters/pagebreak.lua`, compile.py actualizado
 - [ ] Migração manual `estrutura.yaml` CTE → v2 (executar `migrate_schema_v1_to_v2.py`)
-- [ ] config.yaml multi-projecto + auto-load no arranque
+- [ ] config.yaml multi-projecto + auto-load no arranque → Prompt IDE: `PROMPT-IDE-CONFIG-YAML.md`
 - [ ] `variaveis.yaml` por projecto + substituição `{{ VARIAVEL }}` no preprocessor.py  *(depende do config.yaml multi-projecto)*
-- [ ] Camada 2: Mapeamento MD sources + templates DOCX *(depende do schema v2)*
-- [ ] Camada 1 v2: editor do bloco `behavior` por elemento (paginação, numeração, TOC)
+- [ ] Camada 2: Mapeamento MD sources + templates DOCX → Prompt IDE: `PROMPT-IDE-CAMADA2-MVP.md`
+- [ ] Camada 1 v2: `semantic_type` + editor `behavior` por elemento → Prompt IDE: `PROMPT-IDE-CAMADA1-V2.md`
 - [ ] Função Snapshot (Modo A ficheiro inteiro + Modo B divisão por heading com filhos)
 - [ ] Integração: app.py → compile.py → DOCX real
 

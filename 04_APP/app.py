@@ -6,6 +6,7 @@ Camada 3: TOC interactivo, export/import de estrutura.yaml e mapeamento.yaml.
 
 import copy
 import os
+import re
 from pathlib import Path
 
 import streamlit as st
@@ -70,6 +71,12 @@ def inicializar_estado() -> None:
     # Camada 1 — flag para confirmar remoção de elemento
     if "confirmar_remover" not in st.session_state:
         st.session_state.confirmar_remover = None
+    # Multi-projecto — flag de projecto já carregado nesta sessão
+    if "projecto_carregado" not in st.session_state:
+        st.session_state.projecto_carregado = False
+    # Multi-projecto — path do mapeamento.yaml carregado
+    if "mapeamento_yaml_path" not in st.session_state:
+        st.session_state.mapeamento_yaml_path = ""
 
 
 # ---------------------------------------------------------------------------
@@ -656,122 +663,437 @@ def _migrar_v1_para_v2(elementos: list) -> None:
             _migrar_v1_para_v2(filhos)
 
 
+# ---------------------------------------------------------------------------
+# Configuração multi-projecto
+# ---------------------------------------------------------------------------
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
+
+
+def carregar_config() -> dict:
+    """Lê config.yaml. Devolve dict vazio se não existir ou estiver corrompido."""
+    try:
+        if CONFIG_PATH.exists():
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                return yaml.safe_load(f) or {}
+    except Exception:
+        pass
+    return {}
+
+
+def guardar_config(config: dict) -> None:
+    """Escreve config.yaml com o estado actualizado."""
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+
+
+def carregar_projecto(projecto: dict) -> None:
+    """
+    Carrega estrutura.yaml e mapeamento.yaml do projecto para session_state.
+    Actualiza estrutura_yaml_raw, estrutura_yaml_path, mapeamento e mapeamento_yaml_path.
+    """
+    path_estrutura  = projecto.get("estrutura", "")
+    path_mapeamento = projecto.get("mapeamento", "")
+
+    if path_estrutura and Path(path_estrutura).exists():
+        with open(path_estrutura, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        _migrar_v1_para_v2(raw.get("elementos", []))
+        st.session_state.estrutura_yaml_raw  = raw
+        st.session_state.estrutura_yaml_path = path_estrutura
+        # Actualizar também a lista plana de elementos usada no TOC
+        novos_elementos = parse_estrutura_yaml(
+            yaml.dump(raw, allow_unicode=True, default_flow_style=False)
+        )
+        if novos_elementos:
+            limpar_chaves_checkboxes(st.session_state.elementos)
+            st.session_state.elementos = novos_elementos
+    else:
+        if path_estrutura:
+            st.warning(f"estrutura.yaml não encontrado: {path_estrutura}")
+
+    if path_mapeamento and Path(path_mapeamento).exists():
+        with open(path_mapeamento, "r", encoding="utf-8") as f:
+            conteudo_map = f.read()
+        st.session_state.mapeamento          = parse_mapeamento_yaml(conteudo_map)
+        st.session_state.mapeamento_yaml_path = path_mapeamento
+
+    st.session_state.projecto_activo = {
+        "id":   projecto.get("id", ""),
+        "name": projecto.get("name", ""),
+    }
+
+
+# ===========================================================================
+# CAMADA 2 — MAPEAMENTO: funções auxiliares
+# ===========================================================================
+
+def _obter_elementos_flat(elementos: list, nivel_max: int = 99) -> list:
+    """Percorre a árvore recursivamente e devolve lista plana de todos os
+    elementos com include=True.
+    Cada item: {slug, titulo, semantic_type, nivel, profundidade}
+    """
+    resultado = []
+
+    def _percorrer(lista: list, prof: int) -> None:
+        for el in lista:
+            if el.get("include", True):
+                resultado.append({
+                    "slug":          el.get("slug", ""),
+                    "titulo":        el.get("titulo", ""),
+                    "semantic_type": el.get("semantic_type", "section"),
+                    "nivel":         el.get("nivel", 0),
+                    "profundidade":  prof,
+                })
+                filhos = el.get("filhos", []) or []
+                if filhos:
+                    _percorrer(filhos, prof + 1)
+
+    _percorrer(elementos, 0)
+    return resultado
+
+
+def _mapeamento_por_slug(mapeamento: dict) -> dict:
+    """Converte lista de elementos do mapeamento em dict {slug: {campos}}.
+    Tolerante a mapeamento vazio ou None.
+    """
+    if not mapeamento:
+        return {}
+    elementos = mapeamento.get("elementos", []) or []
+    return {el["slug"]: el for el in elementos if "slug" in el}
+
+
+def _renderizar_camada2(elementos_flat: list, map_actual: dict) -> None:
+    """Renderiza o editor de mapeamento: uma linha por elemento.
+    Campos editáveis: md_source, md_scope, template_docx, nota.
+    """
+    MD_SCOPE_OPCOES = ["ficheiro_inteiro", "heading_especifico"]
+
+    novo_mapeamento_elementos = []
+
+    for el in elementos_flat:
+        slug          = el["slug"]
+        titulo        = el["titulo"]
+        semantic_type = el["semantic_type"]
+        prof          = el["profundidade"]
+
+        # Indentação visual por profundidade
+        margem = "\u3000" * prof  # espaço largo U+3000
+
+        # Valores actuais do mapeamento (ou defaults vazios)
+        map_el = map_actual.get(slug, {})
+        md_source_actual     = map_el.get("md_source", "")
+        md_scope_actual      = map_el.get("md_scope", "ficheiro_inteiro")
+        template_docx_actual = map_el.get("template_docx", "default")
+        nota_actual          = map_el.get("nota", "")
+
+        with st.expander(
+            f"{margem}**{slug}** · *{semantic_type}* — {titulo}",
+            expanded=(md_source_actual == ""),  # aberto se ainda sem source
+        ):
+            col1, col2 = st.columns([3, 1])
+
+            md_source = col1.text_input(
+                "Ficheiro MD (path absoluto)",
+                value=md_source_actual,
+                key=f"map_{slug}_md_source",
+                placeholder=r"C:\caminho\para\ficheiro.md",
+            )
+
+            idx_scope = (
+                MD_SCOPE_OPCOES.index(md_scope_actual)
+                if md_scope_actual in MD_SCOPE_OPCOES
+                else 0
+            )
+            md_scope = col2.selectbox(
+                "Scope",
+                MD_SCOPE_OPCOES,
+                index=idx_scope,
+                key=f"map_{slug}_md_scope",
+            )
+
+            col3, col4 = st.columns([3, 1])
+
+            template_docx = col3.text_input(
+                "Template DOCX (deixar 'default' para usar o geral)",
+                value=template_docx_actual,
+                key=f"map_{slug}_template",
+            )
+
+            nota = col4.text_input(
+                "Nota",
+                value=nota_actual,
+                key=f"map_{slug}_nota",
+            )
+
+            # Validação: avisar se md_source não existe no disco
+            if md_source and not Path(md_source).exists():
+                st.warning(f"⚠️ Ficheiro não encontrado: {md_source}")
+            elif md_source:
+                st.success("✅ Ficheiro encontrado")
+
+        novo_mapeamento_elementos.append({
+            "slug":          slug,
+            "md_source":     md_source,
+            "md_scope":      md_scope,
+            "template_docx": template_docx,
+            "nota":          nota,
+        })
+
+    # Guardar em session_state continuamente
+    if not st.session_state.mapeamento:
+        st.session_state.mapeamento = {}
+    st.session_state.mapeamento["elementos"] = novo_mapeamento_elementos
+
+    st.divider()
+
+    # ── Botão guardar mapeamento.yaml ────────────────────────────────────
+    path_map = st.session_state.get("mapeamento_yaml_path", "")
+    col_path, col_btn = st.columns([4, 1])
+    path_export = col_path.text_input(
+        "Path de exportação",
+        value=path_map,
+        key="map_export_path",
+        placeholder=r"C:\caminho\para\mapeamento.yaml",
+    )
+    if col_btn.button("💾 Guardar mapeamento.yaml", use_container_width=True, key="map_btn_guardar"):
+        if not path_export.strip():
+            st.error("Indica o path de exportação.")
+        else:
+            try:
+                dados_export = {
+                    "doc_id":        st.session_state.projecto_activo.get("id", ""),
+                    "doc_title":     st.session_state.projecto_activo.get("name", ""),
+                    "estrutura_ref": "estrutura.yaml",
+                    "data":          str(__import__("datetime").date.today()),
+                    "templates": {
+                        "geral": st.session_state.projecto_activo.get(
+                            "reference_doc",
+                            "C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/02_TEMPLATES/JSJ-CTE-reference.docx"
+                        )
+                    },
+                    "elementos": novo_mapeamento_elementos,
+                }
+                with open(path_export.strip(), "w", encoding="utf-8") as f:
+                    yaml.dump(dados_export, f, allow_unicode=True,
+                              default_flow_style=False, sort_keys=False)
+                st.session_state.mapeamento_yaml_path = path_export.strip()
+                st.success(f"✅ Guardado em: {path_export.strip()}")
+            except Exception as e:
+                st.error(f"Erro ao guardar: {e}")
+
+
 # ===========================================================================
 # LAYOUT PRINCIPAL
 # ===========================================================================
 inicializar_estado()
+
+# Auto-load do projecto no arranque (uma vez por sessão)
+_config_boot   = carregar_config()
+_projectos     = _config_boot.get("projects", [])
+_last_id       = _config_boot.get("last_project", "")
+
+if _projectos and not st.session_state.projecto_carregado:
+    _proj_default = next(
+        (p for p in _projectos if p["id"] == _last_id), _projectos[0]
+    )
+    carregar_projecto(_proj_default)
+    st.session_state.projecto_carregado = True
+
 paths_cfg = ler_paths_config()
 
 # ---------------------------------------------------------------------------
-# Sidebar — informação do projecto + import/export
+# Sidebar — selecção de projecto + import/export
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    proj = st.session_state.projecto_activo
     st.title("JSJ-DOC-ENGINE")
-    st.markdown(f"**Projecto:** {proj['name']}")
-    st.markdown(f"**ID:** `{proj['id']}`")
     st.divider()
 
-    # ── estrutura.yaml ───────────────────────────────────────────────────────
-    st.subheader("estrutura.yaml")
+    # ── Selecção de projecto ──────────────────────────────────────────────
+    _cfg_sb = carregar_config()
+    _projs_sb = _cfg_sb.get("projects", [])
 
-    export_path_est = st.text_input(
-        "Path de exportação",
-        value=st.session_state.export_path_estrutura or paths_cfg.get("estrutura", ""),
-        key="input_path_estrutura",
-        placeholder=r"C:\caminho\para\estrutura.yaml",
-    )
-    # Persistir o path entre reruns
-    st.session_state.export_path_estrutura = export_path_est
+    st.subheader("Projecto activo")
 
-    if st.button("Exportar estrutura.yaml", use_container_width=True):
-        if not export_path_est.strip():
-            st.error("Defina o path de exportação antes de exportar.")
-        else:
-            conteudo = gerar_estrutura_yaml(
-                st.session_state.elementos,
-                st.session_state.projecto_activo,
-            )
-            ok, msg = exportar_ficheiro(conteudo, export_path_est.strip())
-            if ok:
-                st.success(msg)
+    if _projs_sb:
+        _nomes_sb = [p["name"] for p in _projs_sb]
+        _id_actual = st.session_state.projecto_activo.get("id", "")
+        _idx_actual = next(
+            (i for i, p in enumerate(_projs_sb) if p["id"] == _id_actual), 0
+        )
+        _idx_sel = st.selectbox(
+            "Projecto",
+            options=range(len(_nomes_sb)),
+            format_func=lambda i: _nomes_sb[i],
+            index=_idx_actual,
+            key="sel_projecto",
+            label_visibility="collapsed",
+        )
+        if st.button("Carregar", use_container_width=True, key="btn_carregar_proj"):
+            _proj_sel = _projs_sb[_idx_sel]
+            carregar_projecto(_proj_sel)
+            st.session_state.projecto_carregado = True
+            # Registar último projecto usado no config.yaml
+            _cfg_sb["last_project"] = _proj_sel["id"]
+            guardar_config(_cfg_sb)
+            st.toast(f"✅ Projecto carregado: {_proj_sel['name']}", icon="✅")
+            st.rerun()
+    else:
+        _proj_disp = st.session_state.projecto_activo
+        st.markdown(f"**{_proj_disp['name']}**")
+        st.caption(f"ID: `{_proj_disp['id']}`")
+
+    st.divider()
+
+    # ── Novo projecto ─────────────────────────────────────────────────────
+    with st.expander("+ Novo projecto", expanded=False):
+        _np_nome       = st.text_input("Nome do projecto",              key="np_nome")
+        _np_estrutura  = st.text_input("Path estrutura.yaml",           key="np_estrutura",
+                                        placeholder=r"C:\caminho\para\estrutura.yaml")
+        _np_mapeamento = st.text_input("Path mapeamento.yaml",          key="np_mapeamento",
+                                        placeholder=r"C:\caminho\para\mapeamento.yaml")
+        _np_variaveis  = st.text_input("Path variaveis.yaml (opcional)",key="np_variaveis",
+                                        placeholder=r"C:\caminho\para\variaveis.yaml")
+
+        if st.button("Adicionar ao config.yaml", key="btn_add_proj", use_container_width=True):
+            if not _np_nome.strip():
+                st.error("O nome do projecto não pode estar vazio.")
+            elif not _np_estrutura.strip():
+                st.error("O path de estrutura.yaml não pode estar vazio.")
             else:
-                st.error(msg)
-
-    ficheiro_est = st.file_uploader(
-        "Importar estrutura.yaml",
-        type=["yaml", "yml"],
-        key="uploader_estrutura",
-    )
-    if ficheiro_est is not None:
-        conteudo_est = ficheiro_est.read().decode("utf-8")
-        # Armazenar YAML em bruto e nome do ficheiro para o editor de estrutura (Camada 1)
-        dados_raw = yaml.safe_load(conteudo_est) or {}
-        # Compatibilidade retroactiva: converter campos tipo v1 → semantic_type v2
-        _migrar_v1_para_v2(dados_raw.get("elementos", []))
-        if dados_raw != st.session_state.estrutura_yaml_raw:
-            st.session_state.estrutura_yaml_raw = dados_raw
-            st.session_state.estrutura_yaml_path = ficheiro_est.name
-        novos_elementos = parse_estrutura_yaml(conteudo_est)
-        if novos_elementos:
-            # Evitar reimport em cada rerun — só actualiza se slug set mudar
-            slugs_novos = {el["slug"] for el in novos_elementos}
-            slugs_actuais = {el["slug"] for el in st.session_state.elementos}
-            if slugs_novos != slugs_actuais:
-                limpar_chaves_checkboxes(st.session_state.elementos)
-                st.session_state.elementos = novos_elementos
-                st.toast(f"✅ Estrutura importada: {len(novos_elementos)} elementos.", icon="✅")
+                # Gerar id a partir do nome (ex: "CTE Projecto X" → "cte-projecto-x")
+                _novo_id = re.sub(r"[^a-z0-9]+", "-",
+                                  _np_nome.strip().lower()).strip("-")
+                _cfg_add = carregar_config()
+                _ids_existentes = {p["id"] for p in _cfg_add.get("projects", [])}
+                # Garantir unicidade do id
+                if _novo_id in _ids_existentes:
+                    _novo_id = f"{_novo_id}-{len(_ids_existentes) + 1}"
+                _novo_proj = {
+                    "id":         _novo_id,
+                    "name":       _np_nome.strip(),
+                    "estrutura":  _np_estrutura.strip(),
+                    "mapeamento": _np_mapeamento.strip(),
+                    "variaveis":  _np_variaveis.strip(),
+                }
+                if "projects" not in _cfg_add:
+                    _cfg_add["projects"] = []
+                _cfg_add["projects"].append(_novo_proj)
+                _cfg_add["last_project"] = _novo_id
+                guardar_config(_cfg_add)
+                carregar_projecto(_novo_proj)
+                st.session_state.projecto_carregado = True
+                st.toast(f"✅ Projecto adicionado: {_np_nome.strip()}", icon="✅")
                 st.rerun()
-        else:
-            st.warning("Nenhum elemento encontrado no ficheiro importado.")
 
     st.divider()
 
-    # ── mapeamento.yaml ──────────────────────────────────────────────────────
-    st.subheader("mapeamento.yaml")
+    # ── Importar manualmente (fallback) ──────────────────────────────────
+    with st.expander("Importar manualmente", expanded=False):
 
-    export_path_map = st.text_input(
-        "Path de exportação",
-        value=st.session_state.export_path_mapeamento or paths_cfg.get("mapeamento", ""),
-        key="input_path_mapeamento",
-        placeholder=r"C:\caminho\para\mapeamento.yaml",
-    )
-    st.session_state.export_path_mapeamento = export_path_map
+        # ── estrutura.yaml ───────────────────────────────────────────────
+        st.subheader("estrutura.yaml")
 
-    if st.button("Exportar mapeamento.yaml", use_container_width=True):
-        if not export_path_map.strip():
-            st.error("Defina o path de exportação antes de exportar.")
-        else:
-            conteudo = gerar_mapeamento_yaml(
-                st.session_state.elementos,
-                st.session_state.projecto_activo,
-            )
-            ok, msg = exportar_ficheiro(conteudo, export_path_map.strip())
-            if ok:
-                st.success(msg)
+        export_path_est = st.text_input(
+            "Path de exportação",
+            value=(
+                st.session_state.export_path_estrutura
+                or st.session_state.get("estrutura_yaml_path", "")
+                or paths_cfg.get("estrutura", "")
+            ),
+            key="input_path_estrutura",
+            placeholder=r"C:\caminho\para\estrutura.yaml",
+        )
+        # Persistir o path entre reruns
+        st.session_state.export_path_estrutura = export_path_est
+
+        if st.button("Exportar estrutura.yaml", use_container_width=True):
+            if not export_path_est.strip():
+                st.error("Defina o path de exportação antes de exportar.")
             else:
-                st.error(msg)
+                conteudo = gerar_estrutura_yaml(
+                    st.session_state.elementos,
+                    st.session_state.projecto_activo,
+                )
+                ok, msg = exportar_ficheiro(conteudo, export_path_est.strip())
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
 
-    ficheiro_map = st.file_uploader(
-        "Importar mapeamento.yaml",
-        type=["yaml", "yml"],
-        key="uploader_mapeamento",
-    )
-    if ficheiro_map is not None:
-        conteudo_map = ficheiro_map.read().decode("utf-8")
-        mapeamento_importado = parse_mapeamento_yaml(conteudo_map)
-        # Só actualiza e notifica se o mapeamento mudou (evitar toast em cada rerun)
-        meta_nova = mapeamento_importado.get("meta", {})
-        meta_actual = st.session_state.mapeamento.get("meta", {})
-        if meta_nova != meta_actual:
-            st.session_state.mapeamento = mapeamento_importado
-            n_el = len(mapeamento_importado.get("elementos", []))
-            st.toast(f"✅ Mapeamento importado: {n_el} elementos.", icon="✅")
+        ficheiro_est = st.file_uploader(
+            "Importar estrutura.yaml",
+            type=["yaml", "yml"],
+            key="uploader_estrutura",
+        )
+        if ficheiro_est is not None:
+            conteudo_est = ficheiro_est.read().decode("utf-8")
+            # Armazenar YAML em bruto e nome do ficheiro para o editor de estrutura (Camada 1)
+            dados_raw = yaml.safe_load(conteudo_est) or {}
+            # Compatibilidade retroactiva: converter campos tipo v1 → semantic_type v2
+            _migrar_v1_para_v2(dados_raw.get("elementos", []))
+            if dados_raw != st.session_state.estrutura_yaml_raw:
+                st.session_state.estrutura_yaml_raw  = dados_raw
+                st.session_state.estrutura_yaml_path = ficheiro_est.name
+            novos_elementos = parse_estrutura_yaml(conteudo_est)
+            if novos_elementos:
+                # Evitar reimport em cada rerun — só actualiza se slug set mudar
+                slugs_novos   = {el["slug"] for el in novos_elementos}
+                slugs_actuais = {el["slug"] for el in st.session_state.elementos}
+                if slugs_novos != slugs_actuais:
+                    limpar_chaves_checkboxes(st.session_state.elementos)
+                    st.session_state.elementos = novos_elementos
+                    st.toast(f"✅ Estrutura importada: {len(novos_elementos)} elementos.", icon="✅")
+                    st.rerun()
+            else:
+                st.warning("Nenhum elemento encontrado no ficheiro importado.")
+
+        st.divider()
+
+        # ── mapeamento.yaml ──────────────────────────────────────────────
+        st.subheader("mapeamento.yaml")
+
+        export_path_map = st.text_input(
+            "Path de exportação",
+            value=st.session_state.export_path_mapeamento or paths_cfg.get("mapeamento", ""),
+            key="input_path_mapeamento",
+            placeholder=r"C:\caminho\para\mapeamento.yaml",
+        )
+        st.session_state.export_path_mapeamento = export_path_map
+
+        if st.button("Exportar mapeamento.yaml", use_container_width=True):
+            if not export_path_map.strip():
+                st.error("Defina o path de exportação antes de exportar.")
+            else:
+                conteudo = gerar_mapeamento_yaml(
+                    st.session_state.elementos,
+                    st.session_state.projecto_activo,
+                )
+                ok, msg = exportar_ficheiro(conteudo, export_path_map.strip())
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
+
+        ficheiro_map = st.file_uploader(
+            "Importar mapeamento.yaml",
+            type=["yaml", "yml"],
+            key="uploader_mapeamento",
+        )
+        if ficheiro_map is not None:
+            conteudo_map = ficheiro_map.read().decode("utf-8")
+            mapeamento_importado = parse_mapeamento_yaml(conteudo_map)
+            # Só actualiza e notifica se o mapeamento mudou (evitar toast em cada rerun)
+            meta_nova   = mapeamento_importado.get("meta", {})
+            meta_actual = st.session_state.mapeamento.get("meta", {})
+            if meta_nova != meta_actual:
+                st.session_state.mapeamento = mapeamento_importado
+                n_el = len(mapeamento_importado.get("elementos", []))
+                st.toast(f"✅ Mapeamento importado: {n_el} elementos.", icon="✅")
 
 # ---------------------------------------------------------------------------
-# Tabs principais — Camada 3 (TOC) e Camada 1 (Estrutura)
+# Tabs principais — Camada 3 (TOC), Camada 1 (Estrutura) e Camada 2 (Mapeamento)
 # ---------------------------------------------------------------------------
-tab_toc, tab_estrutura = st.tabs(["TOC / Compilar", "Estrutura"])
+tab_toc, tab_est, tab_map = st.tabs(["TOC / Compilar", "Estrutura", "Mapeamento"])
 
 
 # ===========================================================================
@@ -847,7 +1169,7 @@ with tab_toc:
 # ===========================================================================
 # TAB 2 — Editor de Estrutura (Camada 1)
 # ===========================================================================
-with tab_estrutura:
+with tab_est:
     st.header("Editor de Estrutura")
 
     # Verificar se o ficheiro foi importado na sidebar — único entry point
@@ -925,4 +1247,31 @@ with tab_estrutura:
                 st.success(msg)
             else:
                 st.error(msg)
+
+
+# ===========================================================================
+# TAB 3 — Mapeamento de Conteúdo (Camada 2 MVP)
+# ===========================================================================
+with tab_map:
+    st.header("Mapeamento de Conteúdo")
+
+    # Verificar pré-condições
+    if not st.session_state.get("estrutura_yaml_raw"):
+        st.info("Carregue um projecto ou importe estrutura.yaml para começar.")
+        st.stop()
+
+    # Obter lista plana de elementos incluídos (include=True), recursivamente
+    elementos_flat = _obter_elementos_flat(
+        st.session_state.estrutura_yaml_raw.get("elementos", [])
+    )
+
+    if not elementos_flat:
+        st.warning("Nenhum elemento com include=True encontrado na estrutura.")
+        st.stop()
+
+    # Obter mapeamento actual indexado por slug
+    map_actual = _mapeamento_por_slug(st.session_state.mapeamento)
+
+    # Renderizar editor de mapeamento
+    _renderizar_camada2(elementos_flat, map_actual)
 

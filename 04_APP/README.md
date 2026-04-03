@@ -173,12 +173,11 @@ Ver `00_GOVERNO\ROADMAP.md` para estado detalhado.
 Resumo:
 - `compile.py` ✅ funcional — exportou Secção I do CTE
 - `preprocessor.py` ✅ criado
-- `app.py` ✅ Camada 1 v2 (semantic_type + behavior editor) + Camada 3 funcional
-- `semantic_type_registry.py` ⏳ a criar (prompt IDE: `PROMPT-IDE-SCHEMA-V2.md`)
-- `migrate_schema_v1_to_v2.py` ⏳ a criar (mesmo prompt)
-- `filters\pagebreak.lua` ⏳ a criar (mesmo prompt)
-- `compile.py` ⏳ a actualizar com injecção de marcadores + --lua-filter (mesmo prompt)
-- `config.yaml` ⏳ a criar com schema multi-projecto
+- `app.py` ✅ Camada 1 v2 (semantic_type + behavior editor) + Camada 3 funcional + auto-load de projecto no arranque + ✅ Camada 2 MVP (mapeamento md_source por elemento)
+- `semantic_type_registry.py` ✅ criado
+- `migrate_schema_v1_to_v2.py` ✅ criado
+- `filters\pagebreak.lua` ✅ criado
+- `config.yaml` ✅ schema multi-projecto funcional
 
 ---
 
