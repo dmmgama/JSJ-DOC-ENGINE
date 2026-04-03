@@ -173,7 +173,7 @@ Ver `00_GOVERNO\ROADMAP.md` para estado detalhado.
 Resumo:
 - `compile.py` ✅ funcional — exportou Secção I do CTE
 - `preprocessor.py` ✅ criado
-- `app.py` ✅ Camada 3 funcional (TOC interactivo, export/import) + Camada 1 (editor estrutura)
+- `app.py` ✅ Camada 1 v2 (semantic_type + behavior editor) + Camada 3 funcional
 - `semantic_type_registry.py` ⏳ a criar (prompt IDE: `PROMPT-IDE-SCHEMA-V2.md`)
 - `migrate_schema_v1_to_v2.py` ⏳ a criar (mesmo prompt)
 - `filters\pagebreak.lua` ⏳ a criar (mesmo prompt)

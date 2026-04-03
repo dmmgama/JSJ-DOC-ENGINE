@@ -11,6 +11,14 @@ from pathlib import Path
 import streamlit as st
 import yaml
 
+from semantic_type_registry import (
+    SEMANTIC_TYPES,
+    TIPO_V1_TO_SEMANTIC_TYPE,
+    get_defaults,
+    infer_section_role,
+    resolve_behavior,
+)
+
 # ---------------------------------------------------------------------------
 # Configuração da página
 # ---------------------------------------------------------------------------
@@ -41,10 +49,6 @@ PROJECTO_MOCK = {
 # ---------------------------------------------------------------------------
 # Inicialização do estado da sessão
 # ---------------------------------------------------------------------------
-# Tipos pré-definidos usados quando o YAML não declara tipos_disponiveis
-TIPOS_PREDEFINIDOS = ["seccao", "heading", "anexo", "toc", "front_matter"]
-
-
 def inicializar_estado() -> None:
     """Garante que todas as chaves de session_state existem."""
     if "elementos" not in st.session_state:
@@ -126,11 +130,11 @@ def gerar_estrutura_yaml(elementos: list, projecto: dict) -> str:
     elementos_yaml = []
     for el in elementos:
         item = {
-            "slug":    el["slug"],
-            "titulo":  el["titulo"],
-            "tipo":    el.get("tipo", "heading"),
-            "include": el["incluir"],
-            "ordem":   el["ordem"],
+            "slug":          el["slug"],
+            "titulo":        el["titulo"],
+            "semantic_type": el.get("semantic_type", "section"),
+            "include":       el["incluir"],
+            "ordem":         el["ordem"],
         }
         # Adicionar campos opcionais apenas se presentes
         if el.get("nivel"):
@@ -201,9 +205,14 @@ def _aplanar_elementos(elementos_yaml: list, pai: str | None, contador: list) ->
     for el in elementos_yaml:
         if not isinstance(el, dict):
             continue
-        tipo = el.get("tipo", "heading")
+        # Compatibilidade retroactiva: converter tipo v1 → semantic_type v2
+        if "tipo" in el and "semantic_type" not in el:
+            el["semantic_type"] = TIPO_V1_TO_SEMANTIC_TYPE.get(el["tipo"], "section")
+            del el["tipo"]
+
+        tipo = el.get("tipo")  # None se já convertido (v1 → v2)
         nivel_raw = el.get("nivel")  # int (1, 2) ou None
-        # Mapear tipo+nivel para string interna de nível
+        # Mapear tipo+nivel para string interna de nível (compatibilidade v1)
         if tipo == "seccao":
             nivel_str = "seccao"
         elif tipo == "anexo":
@@ -214,13 +223,13 @@ def _aplanar_elementos(elementos_yaml: list, pai: str | None, contador: list) ->
             nivel_str = f"H{nivel_raw}" if nivel_raw else "H1"
 
         item = {
-            "slug":    el.get("slug", ""),
-            "titulo":  el.get("titulo", ""),
-            "tipo":    tipo,
-            "nivel":   nivel_str,
-            "pai":     pai,
-            "incluir": bool(el.get("include", True)),
-            "ordem":   contador[0],
+            "slug":          el.get("slug", ""),
+            "titulo":        el.get("titulo", ""),
+            "semantic_type": el.get("semantic_type", "section"),
+            "nivel":         nivel_str,
+            "pai":           pai,
+            "incluir":       bool(el.get("include", True)),
+            "ordem":         contador[0],
         }
         contador[0] += 1
         resultado.append(item)
@@ -313,14 +322,8 @@ def limpar_chaves_checkboxes(elementos: list) -> None:
 # ===========================================================================
 
 def _obter_tipos(raw: dict) -> list:
-    """Devolve lista de tipos do dict raw do estrutura.yaml.
-
-    Se o campo tipos_disponiveis não existir, devolve os tipos pré-definidos.
-    """
-    tipos = raw.get("tipos_disponiveis")
-    if isinstance(tipos, list) and tipos:
-        return tipos
-    return list(TIPOS_PREDEFINIDOS)
+    """Tipos semânticos disponíveis — sempre do registry, nunca do YAML."""
+    return list(SEMANTIC_TYPES)
 
 
 def _todos_slugs(elementos: list) -> list:
@@ -353,10 +356,11 @@ def _elemento_vazio(slug: str) -> dict:
     return {
         "slug":          slug,
         "titulo":        "",
-        "tipo":          "heading",
+        "semantic_type": "section",   # era "tipo": "heading"
         "nivel":         1,
         "display_order": 0,
         "include":       True,
+        "filhos":        [],
     }
 
 
@@ -415,20 +419,24 @@ def _renderizar_formulario_elemento(el: dict, prefixo: str, tipos: list, element
     )
     el["titulo"] = novo_titulo
 
-    # ── tipo ──────────────────────────────────────────────────────────────
-    tipo_actual = el.get("tipo", "heading")
-    idx_tipo = tipos.index(tipo_actual) if tipo_actual in tipos else 0
-    novo_tipo = col_tipo.selectbox(
-        "Tipo",
-        options=tipos,
-        index=idx_tipo,
-        key=f"{prefixo}_tipo",
+    # ── semantic_type ──────────────────────────────────────────────────────────────────
+    st_actual = el.get("semantic_type", "section")
+    idx_st = SEMANTIC_TYPES.index(st_actual) if st_actual in SEMANTIC_TYPES else SEMANTIC_TYPES.index("section")
+    novo_st = col_tipo.selectbox(
+        "Tipo semântico",
+        SEMANTIC_TYPES,
+        index=idx_st,
+        key=f"{prefixo}_semantic_type",
         label_visibility="collapsed",
     )
-    el["tipo"] = novo_tipo
+    el["semantic_type"] = novo_st
 
-    # ── nivel (só para headings) ──────────────────────────────────────────
-    if novo_tipo == "heading":
+    # section_role inferido (ou override manual)
+    section_role = el.get("section_role") or infer_section_role(novo_st)
+    col_tipo.caption(f"↳ {section_role}")
+
+    # ── nivel (só para headings) ──────────────────────────────────────────────────
+    if novo_st == "section":
         nivel_actual = el.get("nivel", 1)
         if not isinstance(nivel_actual, int):
             nivel_actual = 1
@@ -464,12 +472,96 @@ def _renderizar_formulario_elemento(el: dict, prefixo: str, tipos: list, element
     )
     el["include"] = novo_inc
 
+    # ── behavior (expander opcional) ──────────────────────────────────────
+    with st.expander("⚙ Comportamento (paginação / numeração / TOC)", expanded=False):
+        beh      = el.get("behavior", {}) or {}
+        beh_page = beh.get("page", {}) or {}
+        beh_num  = beh.get("numbering", {}) or {}
+        beh_toc  = beh.get("toc", {}) or {}
+
+        defaults = get_defaults(el.get("semantic_type", "section"))
+
+        col_b1, col_b2, col_b3 = st.columns(3)
+
+        # TOC
+        toc_include = col_b1.checkbox(
+            "Entra no TOC",
+            value=beh_toc.get("include", defaults["toc_include"]),
+            key=f"{prefixo}_toc_include",
+        )
+
+        # Paginação
+        page_break = col_b2.checkbox(
+            "Page break antes",
+            value=beh_page.get("break_before", defaults["page_break_before"]),
+            key=f"{prefixo}_page_break",
+        )
+        section_break = col_b2.checkbox(
+            "Section break antes",
+            value=beh_page.get("section_break_before", defaults["section_break_before"]),
+            key=f"{prefixo}_section_break",
+        )
+
+        # Numeração
+        ESQUEMAS = ["arabic", "roman_lower", "roman_upper", "alpha", "none"]
+        num_scheme_actual = beh_num.get("scheme", defaults["num_scheme"])
+        idx_scheme = ESQUEMAS.index(num_scheme_actual) if num_scheme_actual in ESQUEMAS else 0
+        num_scheme = col_b3.selectbox(
+            "Esquema numeração",
+            ESQUEMAS,
+            index=idx_scheme,
+            key=f"{prefixo}_num_scheme",
+        )
+        num_visible = col_b3.checkbox(
+            "Número visível",
+            value=beh_num.get("visible", defaults["num_visible"]),
+            key=f"{prefixo}_num_visible",
+        )
+        num_restart = col_b3.checkbox(
+            "Reiniciar numeração aqui",
+            value=beh_num.get("restart", defaults["num_restart"]),
+            key=f"{prefixo}_num_restart",
+        )
+
+        # Guardar apenas overrides (não gravar se igual ao default do semantic_type)
+        novo_beh = {}
+
+        toc_blk = {}
+        if toc_include != defaults["toc_include"]:
+            toc_blk["include"] = toc_include
+        if toc_blk:
+            novo_beh["toc"] = toc_blk
+
+        page_blk = {}
+        if page_break != defaults["page_break_before"]:
+            page_blk["break_before"] = page_break
+        if section_break != defaults["section_break_before"]:
+            page_blk["section_break_before"] = section_break
+        if page_blk:
+            novo_beh["page"] = page_blk
+
+        num_blk = {}
+        if num_scheme != defaults["num_scheme"]:
+            num_blk["scheme"]  = num_scheme
+        if num_visible != defaults["num_visible"]:
+            num_blk["visible"] = num_visible
+        if num_restart != defaults["num_restart"]:
+            num_blk["restart"] = num_restart
+        if num_blk:
+            novo_beh["numbering"] = num_blk
+
+        # Só escreve behavior se tiver overrides
+        if novo_beh:
+            el["behavior"] = novo_beh
+        else:
+            el.pop("behavior", None)   # limpa behavior se não há overrides
+
 
 def _renderizar_elemento(el: dict, profundidade: int, prefixo: str,
                           tipos: list, elementos_raiz: list, idx_pai_path: str) -> None:
     """Renderiza recursivamente um elemento e os seus filhos."""
     margem = "　" * profundidade  # espaço de indentação visual
-    rotulo_tipo = el.get("tipo", "heading")
+    rotulo_tipo = el.get("semantic_type", "section")
     slug_disp   = el.get("slug") or "—"
 
     with st.expander(f"{margem}**{slug_disp}** · *{rotulo_tipo}*", expanded=False):
@@ -551,6 +643,19 @@ def _guardar_estrutura_yaml_ficheiro(caminho: str, dados: dict) -> tuple:
         return False, f"Erro ao guardar: {exc}"
 
 
+def _migrar_v1_para_v2(elementos: list) -> None:
+    """Converte campos tipo v1 → semantic_type v2 em todos os elementos (recursivo)."""
+    for el in elementos:
+        if not isinstance(el, dict):
+            continue
+        if "tipo" in el and "semantic_type" not in el:
+            el["semantic_type"] = TIPO_V1_TO_SEMANTIC_TYPE.get(el["tipo"], "section")
+            del el["tipo"]
+        filhos = el.get("filhos") or []
+        if filhos:
+            _migrar_v1_para_v2(filhos)
+
+
 # ===========================================================================
 # LAYOUT PRINCIPAL
 # ===========================================================================
@@ -602,6 +707,8 @@ with st.sidebar:
         conteudo_est = ficheiro_est.read().decode("utf-8")
         # Armazenar YAML em bruto e nome do ficheiro para o editor de estrutura (Camada 1)
         dados_raw = yaml.safe_load(conteudo_est) or {}
+        # Compatibilidade retroactiva: converter campos tipo v1 → semantic_type v2
+        _migrar_v1_para_v2(dados_raw.get("elementos", []))
         if dados_raw != st.session_state.estrutura_yaml_raw:
             st.session_state.estrutura_yaml_raw = dados_raw
             st.session_state.estrutura_yaml_path = ficheiro_est.name
@@ -763,43 +870,18 @@ with tab_estrutura:
 
     st.divider()
 
-    # ── Tipos disponíveis ─────────────────────────────────────────────────
-    st.subheader("Tipos disponíveis")
+    # ── Tipos semânticos ──────────────────────────────────────────────────
+    st.subheader("Tipos semânticos")
+    st.caption("Tipos fixos definidos pelo sistema. Para cada elemento escolhe o tipo no editor abaixo.")
+
+    # Tabela informativa dos tipos e section_role inferido
+    dados_tipos = [
+        {"Tipo": t, "Papel no documento": infer_section_role(t)}
+        for t in SEMANTIC_TYPES
+    ]
+    st.dataframe(dados_tipos, use_container_width=True, hide_index=True)
 
     tipos = _obter_tipos(raw)
-    # Garantir que o campo existe no raw (criá-lo se necessário)
-    raw.setdefault("tipos_disponiveis", list(tipos))
-
-    # Listar tipos com opção de apagar
-    tipos_actualizados = []
-    for t in list(raw["tipos_disponiveis"]):
-        col_t_nome, col_t_rename, col_t_del = st.columns([3, 3, 1])
-        col_t_nome.markdown(f"`{t}`")
-        novo_nome = col_t_rename.text_input(
-            "Renomear", value=t, key=f"c1_tipo_rename_{t}",
-            label_visibility="collapsed"
-        )
-        apagar = col_t_del.button("🗑", key=f"c1_tipo_del_{t}", help=f"Apagar tipo {t}")
-        if not apagar:
-            tipos_actualizados.append(novo_nome.strip() if novo_nome.strip() else t)
-
-    raw["tipos_disponiveis"] = tipos_actualizados
-    tipos = raw["tipos_disponiveis"]  # referência actualizada
-
-    # Adicionar novo tipo
-    col_novo_tipo, col_btn_tipo, _ = st.columns([3, 2, 5])
-    novo_tipo_input = col_novo_tipo.text_input(
-        "Novo tipo", key="c1_novo_tipo_input", placeholder="nome-do-tipo",
-        label_visibility="collapsed"
-    )
-    if col_btn_tipo.button("Adicionar tipo", key="c1_btn_add_tipo"):
-        nome_limpo = novo_tipo_input.strip()
-        if nome_limpo and nome_limpo not in tipos:
-            raw["tipos_disponiveis"].append(nome_limpo)
-            st.rerun()
-        elif nome_limpo in tipos:
-            st.warning(f"Tipo `{nome_limpo}` já existe.")
-
     st.divider()
 
     # ── Lista de elementos ────────────────────────────────────────────────
@@ -809,7 +891,7 @@ with tab_estrutura:
 
     # Cabeçalho das colunas
     ch1, ch2, ch3, ch4, ch5, ch6 = st.columns([2, 3, 2, 1, 1, 1])
-    ch1.caption("Slug"); ch2.caption("Título"); ch3.caption("Tipo")
+    ch1.caption("Slug"); ch2.caption("Título"); ch3.caption("Tipo semântico")
     ch4.caption("Nível"); ch5.caption("Ordem"); ch6.caption("Inc.")
 
     _renderizar_lista_elementos(elementos_raw, 0, "c1_el", tipos, elementos_raw)
