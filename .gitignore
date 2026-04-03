@@ -1,0 +1,29 @@
+# Ambiente virtual
+venv/
+.venv/
+env/
+
+# Cache Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Output gerado (DOCX compilados)
+03_OUTPUT/
+
+# Ficheiros Word temporários
+~$*.docx
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Variáveis de ambiente
+.env
+
+# IDE
+.vscode/
+.idea/
+
