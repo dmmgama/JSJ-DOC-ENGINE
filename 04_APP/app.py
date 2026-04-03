@@ -964,7 +964,7 @@ with st.sidebar:
             key="sel_projecto",
             label_visibility="collapsed",
         )
-        col_load, col_del = st.columns([3, 1])
+        col_load, col_reimp, col_del = st.columns([3, 2, 1])
         if col_load.button("Carregar", width="stretch", key="btn_carregar_proj"):
             _proj_sel = _projs_sb[_idx_sel]
             carregar_projecto(_proj_sel)
@@ -973,6 +973,21 @@ with st.sidebar:
             _cfg_sb["last_project"] = _proj_sel["id"]
             guardar_config(_cfg_sb)
             st.toast(f"✅ Projecto carregado: {_proj_sel['name']}", icon="✅")
+            st.rerun()
+
+        # Botão reimportar — limpa dados carregados para permitir reimport
+        if col_reimp.button("🔄 Reimportar", width="stretch", key="btn_reimportar_proj"):
+            st.session_state.estrutura_yaml_raw   = {}
+            st.session_state.estrutura_yaml_path  = ""
+            st.session_state.mapeamento           = {}
+            st.session_state.mapeamento_yaml_path = ""
+            st.session_state.projecto_carregado   = False
+            # Limpar widget keys da Camada 2 e checkboxes do TOC
+            keys_to_del = [k for k in st.session_state
+                           if k.startswith("map_") or k.startswith("chk_")]
+            for k in keys_to_del:
+                del st.session_state[k]
+            st.toast("Dados limpos — clique Carregar ou importe manualmente.", icon="🔄")
             st.rerun()
 
         # Confirmação em dois passos para apagar projecto
