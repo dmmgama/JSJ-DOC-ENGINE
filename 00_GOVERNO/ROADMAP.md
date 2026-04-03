@@ -1,7 +1,7 @@
 # ROADMAP — JSJ-DOC-ENGINE
 
-> **Versão:** 1.7 — Abril 2026
-> **Estado:** 🟢 Fase 1 concluída — Fase 2 em curso (Camada 3 ✅, D11 YAML ✅, Camada 1 ✅)
+> **Versão:** 1.8 — Abril 2026
+> **Estado:** 🟢 Fase 1 concluída — Fase 2 em curso (Camada 3 ✅, D11 YAML ✅, Camada 1 ✅, D12 schema v2 + Lua filter ⏳ prompt IDE pronto)
 > **Documento de referência:** `README.md` (raiz)
 
 ---
@@ -37,9 +37,14 @@
 - [x] Camada 3: Toggle N/A + reordenação com setas
 - [x] Migração parsers MD → YAML (D11) — `parse_estrutura_yaml()`, `parse_mapeamento_yaml()` — testado com 68 elementos ✅
 - [x] Camada 1: Editor de estrutura do documento
+- [ ] **Schema v2** (D12): `semantic_type` + `behavior` + `section_role` inferido + Lua filter + migração v1→v2
+      → Prompt IDE: `PROMPT-IDE-SCHEMA-V2.md` | Decisão: `DECISAO-SCHEMA-V2.md`
+      → Entregas: `semantic_type_registry.py`, `migrate_schema_v1_to_v2.py`, `filters/pagebreak.lua`, compile.py actualizado
+- [ ] Migração manual `estrutura.yaml` CTE → v2 (executar `migrate_schema_v1_to_v2.py`)
 - [ ] config.yaml multi-projecto + auto-load no arranque
-- [ ] `variaveis.yaml` por projecto + substituição `{{ VARIAVEL }}` no preprocessor.py  *(depende do config.yaml multi-projecto — schema inclui campo `variaveis:`)*
-- [ ] Camada 2: Mapeamento MD sources + templates DOCX
+- [ ] `variaveis.yaml` por projecto + substituição `{{ VARIAVEL }}` no preprocessor.py  *(depende do config.yaml multi-projecto)*
+- [ ] Camada 2: Mapeamento MD sources + templates DOCX *(depende do schema v2)*
+- [ ] Camada 1 v2: editor do bloco `behavior` por elemento (paginação, numeração, TOC)
 - [ ] Função Snapshot (Modo A ficheiro inteiro + Modo B divisão por heading com filhos)
 - [ ] Integração: app.py → compile.py → DOCX real
 
@@ -113,4 +118,4 @@ Tab "Estrutura": carregar ficheiro → metadados → tipos disponíveis (adicion
 
 ---
 
-**Fim — ROADMAP.md v1.7 — 2026-04-03**
+**Fim — ROADMAP.md v1.8 — 2026-04-03**

@@ -524,7 +524,7 @@ def _renderizar_lista_elementos(lista: list, profundidade: int, prefixo_base: st
         if not isinstance(el, dict):
             continue
         prefixo = f"{prefixo_base}_{i}"
-        _renderizar_elemento(el, profundidade, prefixo, tipos, elementos_raiz)
+        _renderizar_elemento(el, profundidade, prefixo, tipos, elementos_raiz, prefixo_base)
 
 
 def _carregar_estrutura_yaml_ficheiro(caminho: str) -> dict:
@@ -600,6 +600,11 @@ with st.sidebar:
     )
     if ficheiro_est is not None:
         conteudo_est = ficheiro_est.read().decode("utf-8")
+        # Armazenar YAML em bruto e nome do ficheiro para o editor de estrutura (Camada 1)
+        dados_raw = yaml.safe_load(conteudo_est) or {}
+        if dados_raw != st.session_state.estrutura_yaml_raw:
+            st.session_state.estrutura_yaml_raw = dados_raw
+            st.session_state.estrutura_yaml_path = ficheiro_est.name
         novos_elementos = parse_estrutura_yaml(conteudo_est)
         if novos_elementos:
             # Evitar reimport em cada rerun — só actualiza se slug set mudar
@@ -738,35 +743,15 @@ with tab_toc:
 with tab_estrutura:
     st.header("Editor de Estrutura")
 
-    # ── Carregar ficheiro estrutura.yaml ─────────────────────────────────
-    path_est_default = st.session_state.export_path_estrutura or paths_cfg.get("estrutura", "")
-    path_est_c1 = st.text_input(
-        "Path do estrutura.yaml",
-        value=st.session_state.estrutura_yaml_path or path_est_default,
-        key="c1_path_estrutura",
-        placeholder=r"C:\caminho\para\estrutura.yaml",
-    )
-    st.session_state.estrutura_yaml_path = path_est_c1.strip()
-
-    col_load, col_reload, _ = st.columns([2, 2, 6])
-    if col_load.button("Carregar ficheiro", key="c1_btn_load"):
-        if not path_est_c1.strip():
-            st.error("Defina o path do ficheiro antes de carregar.")
-        elif not Path(path_est_c1.strip()).exists():
-            st.error(f"Ficheiro não encontrado: {path_est_c1.strip()}")
-        else:
-            st.session_state.estrutura_yaml_raw = _carregar_estrutura_yaml_ficheiro(
-                path_est_c1.strip()
-            )
-            st.success("Ficheiro carregado.")
-            st.rerun()
+    # Verificar se o ficheiro foi importado na sidebar — único entry point
+    if not st.session_state.get("estrutura_yaml_raw"):
+        st.info("Importe o ficheiro estrutura.yaml na sidebar para começar a editar.")
+        st.stop()
 
     raw: dict = st.session_state.estrutura_yaml_raw
 
-    # Se não há dados carregados, mostrar mensagem e parar
-    if not raw:
-        st.info("Carregue um ficheiro estrutura.yaml para começar a editar.")
-        st.stop()
+    # Mostrar qual o ficheiro activo
+    st.caption(f"A editar: {st.session_state.get('estrutura_yaml_path', 'ficheiro importado')}")
 
     st.divider()
 
@@ -848,10 +833,12 @@ with tab_estrutura:
 
     if st.button("💾 Guardar estrutura", key="c1_btn_guardar",
                  disabled=bool(erros), use_container_width=True):
-        if not path_est_c1.strip():
-            st.error("Defina o path antes de guardar.")
+        # Usar o path de exportação definido na sidebar
+        path_guardar = st.session_state.get("export_path_estrutura", "").strip()
+        if not path_guardar:
+            st.error("Defina o path de exportação na sidebar antes de guardar.")
         else:
-            ok, msg = _guardar_estrutura_yaml_ficheiro(path_est_c1.strip(), raw)
+            ok, msg = _guardar_estrutura_yaml_ficheiro(path_guardar, raw)
             if ok:
                 st.success(msg)
             else:

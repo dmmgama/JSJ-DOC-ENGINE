@@ -99,11 +99,15 @@ estrutura.yaml + mapeamento.yaml (auto-load ou import)
         │
         └── "Compilar" →
                 compile.py
+                    ├── lê estrutura.yaml → resolve behavior por elemento (semantic_type_registry.py)
                     ├── lê mapeamento.yaml
                     ├── lê MD de cada elemento
-                    ├── preprocessor.py ({{ excel }} → tabelas MD)
+                    ├── preprocessor.py ({{ excel }} → tabelas MD; {{ VARIAVEL }} → variaveis.yaml)
+                    ├── injeccta marcadores <!-- pagebreak --> / <!-- sectionbreak --> no MD
                     ├── concatena MD processado
-                    └── Pandoc → DOCX (template geral ou por elemento)
+                    └── Pandoc → DOCX
+                            ├── --lua-filter filters/pagebreak.lua (page/section breaks)
+                            ├── template geral: 02_TEMPLATES\JSJ-CTE-reference.docx
                             └── 03_OUTPUT\
 ```
 
@@ -113,10 +117,12 @@ estrutura.yaml + mapeamento.yaml (auto-load ou import)
 
 ### Camada 1 — Definição do Documento
 O utilizador define o que é o documento e como está organizado:
-- Tipo de documento (CTE, Memória Descritiva, Relatório, etc.)
-- Estrutura hierárquica: Secções → Headings H1–H4 → Anexos
-- Elementos especiais: TOC geral, TOC de figuras, TOC de tabelas
-- Output: `estrutura.yaml`
+- `semantic_type` por elemento (enum fechado: cover, toc, section, annex, etc.)
+- Estrutura hierárquica: Secções → Headings H1–H4 → Anexos com `filhos[]` recursivo
+- `section_role` inferido (`front_matter` / `main_matter` / `back_matter`) — overridável por elemento
+- `behavior` por elemento: paginação, numeração, TOC (só escrito quando difere dos defaults)
+- Defaults inteligentes por `semantic_type` — hardcoded em `semantic_type_registry.py`
+- Output: `estrutura.yaml` (schema v2)
 
 ### Camada 2 — Mapeamento de Conteúdo
 Para cada elemento da estrutura:
@@ -157,17 +163,22 @@ Path de cada ficheiro definido em `config.yaml` (campo `variaveis:` opcional).
 
 ```
 04_APP\
-├── app.py              ← UI Streamlit (3 camadas + snapshot)
-├── compile.py          ← orquestrador de compilação
-├── preprocessor.py     ← tags {{ excel }} → tabelas MD
-├── config.yaml         ← multi-projecto + paths defaults
+├── app.py                      ← UI Streamlit (3 camadas + snapshot)
+├── compile.py                  ← orquestrador de compilação
+├── preprocessor.py             ← tags {{ excel }} e {{ VARIAVEL }} → MD
+├── semantic_type_registry.py   ← registry de tipos semânticos + defaults + resolve_behavior()
+├── migrate_schema_v1_to_v2.py  ← script standalone: migra estrutura.yaml v1 → v2
+├── config.yaml                 ← multi-projecto + paths defaults  ⏳
 ├── requirements.txt
+├── filters\
+│   └── pagebreak.lua           ← Lua filter Pandoc: page/section breaks via comentários HTML
 └── venv\
 ```
 
 Ficheiros de trabalho por projecto (fora de `04_APP\`, paths definidos em `config.yaml`):
-- `estrutura.yaml`   ← definição do documento (tipo, hierarquia) — reutilizável como template
+- `estrutura.yaml`   ← schema v2: semantic_type + behavior + filhos[] — reutilizável como template
 - `mapeamento.yaml`  ← MD sources + templates DOCX por elemento — específico de cada instância/obra
+- `variaveis.yaml`   ← (opcional) variáveis `{{ VAR }}` para o preprocessor
 
 ---
 
@@ -218,6 +229,9 @@ O utilizador pode sempre adicionar/remover projectos da lista sem apagar ficheir
 | D9 | LLM Guide | Ficheiro de contrato de interface entre projectos JSJ e o DOC-ENGINE (`00_GOVERNO/LLM_GUIDE.md`) | Protocolo informal |
 | D10 | Supabase | Fora do scope MVP — arquitectura de MD compatível com migração futura | Supabase no MVP |
 | D11 | Formato ficheiros de estrutura | YAML puro (`estrutura.yaml`, `mapeamento.yaml`) | MD com blocos key:value — frágil, não standard |
+| D12 | Schema estrutura.yaml | v2: `semantic_type` + `behavior` (overrides) + `section_role` inferido; defaults hardcoded em `semantic_type_registry.py` | Flags avulsas (`is_annex`, `is_toc`…) — redundantes e contraditórias |
+| D12a | Pipeline paginação | 3 tiers: Pandoc nativo → Lua filter (`filters/pagebreak.lua`) → python-docx (fase posterior) | Tudo no Pandoc (não chega) ou tudo no python-docx (frágil) |
+| D12b | `section_role` | Inferido do `semantic_type`; overridável por elemento quando necessário | Campo obrigatório manual — ruído no YAML |
 
 ---
 
@@ -232,4 +246,4 @@ O utilizador pode sempre adicionar/remover projectos da lista sem apagar ficheir
 
 ---
 
-**Fim — ARQUITECTURA.md v1.2 — 2026-04-03**
+**Fim — ARQUITECTURA.md v1.3 — 2026-04-03**

@@ -137,10 +137,13 @@ Quando preparas um prompt para o agente IDE (VSCode), usar sempre:
 | Estilos DOCX | reference.docx JSJ (em 02_TEMPLATES\) |
 | Orquestrador | Python 3.x + PyYAML |
 | UI | Streamlit (3 camadas: estrutura, mapeamento, TOC interactivo) |
-| Pós-processamento pontual | python-docx |
-| Preprocessador Excel | preprocessor.py + openpyxl | Tags {{ excel }} → tabelas MD antes do Pandoc |
-| Definição do documento | `estrutura.yaml` — tipo, hierarquia, elementos |
+| Pós-processamento pontual | python-docx (fase posterior ao scope actual) |
+| Preprocessador | preprocessor.py — `{{ excel }}` → tabelas MD; `{{ VARIAVEL }}` → variaveis.yaml |
+| Paginação/secções | `filters/pagebreak.lua` — Lua filter Pandoc; page/section breaks via comentários HTML |
+| Registry de tipos | `semantic_type_registry.py` — defaults hardcoded por semantic_type; resolve_behavior() |
+| Definição do documento | `estrutura.yaml` (schema v2) — semantic_type, behavior, filhos[] |
 | Mapeamento de conteúdo | `mapeamento.yaml` — MD sources + templates DOCX por elemento |
+| Variáveis por projecto | `variaveis.yaml` (opcional) — substituições {{ VAR }} |
 
 **Não usar:** LangChain, frameworks pesadas, dependências exóticas,
 qualquer LLM na pipeline de compilação, Supabase (fase posterior).
@@ -151,13 +154,15 @@ qualquer LLM na pipeline de compilação, Supabase (fase posterior).
 
 | Ficheiro | Conteúdo | Scope |
 |----------|----------|-------|
-| `estrutura.yaml` | Hierarquia do documento em YAML | Template reutilizável |
-| `mapeamento.yaml` | MD sources + templates DOCX em YAML | Específico de cada obra |
+| `estrutura.yaml` | Schema v2: semantic_type + behavior (overrides) + filhos[] | Template reutilizável |
+| `mapeamento.yaml` | MD sources + templates DOCX por elemento | Específico de cada obra |
+| `variaveis.yaml` | Variáveis `{{ VAR }}` para substituição no preprocessor (opcional) | Específico de cada obra |
 
-Estes ficheiros são produzidos e consumidos pela app.py.
+Schema v2: o campo `tipo` (v1) foi substituído por `semantic_type` (enum fechado).
+O bloco `behavior` só é escrito quando difere dos defaults do semantic_type.
+Defaults hardcoded em `semantic_type_registry.py` — não no YAML.
 Os paths são definidos em `config.yaml`.
-Formato YAML — parseável com `yaml.safe_load()`, sem parser custom.
-**Nunca editar manualmente** — gerados/exportados pela Camada 3 da app.
+Migração v1→v2: script `04_APP/migrate_schema_v1_to_v2.py` — executar manualmente.
 
 ## LLM GUIDE (futuro — Fase 3)
 
@@ -199,17 +204,22 @@ estarem validados em ambiente real (Fase 2 concluída).
 
 ```
 04_APP\
-├── app.py              ← UI Streamlit (3 camadas + snapshot)
-├── compile.py          ← orquestrador de compilação
-├── preprocessor.py     ← tags {{ excel }} → tabelas MD
-├── config.yaml         ← multi-projecto + paths defaults
+├── app.py                      ← UI Streamlit (3 camadas + snapshot)
+├── compile.py                  ← orquestrador: resolve behavior → injeccta marcadores → Pandoc
+├── preprocessor.py             ← {{ excel }} e {{ VARIAVEL }} → MD
+├── semantic_type_registry.py   ← registry de tipos semânticos + defaults + resolve_behavior()
+├── migrate_schema_v1_to_v2.py  ← migração estrutura.yaml v1 → v2 (standalone)
+├── config.yaml                 ← multi-projecto + paths  ⏳ a criar
 ├── requirements.txt
+├── filters\
+│   └── pagebreak.lua           ← Lua filter: <!-- pagebreak/sectionbreak --> → OpenXML
 └── venv\
 ```
 
 Ficheiros de trabalho por projecto (fora de `04_APP\`, paths em `config.yaml`):
-- `estrutura.yaml`   — definição do documento (tipo, hierarquia) — reutilizável
+- `estrutura.yaml`   — schema v2: semantic_type + behavior + filhos[] — reutilizável
 - `mapeamento.yaml`  — sources MD + templates por elemento — específico de cada obra
+- `variaveis.yaml`   — variáveis {{ VAR }} (opcional)
 
 ---
 
@@ -218,11 +228,13 @@ Ficheiros de trabalho por projecto (fora de `04_APP\`, paths em `config.yaml`):
 | Ficheiro | Quando ler |
 |----------|-----------|
 | README.md | Sempre primeiro |
-| 00_GOVERNO/ARQUITECTURA.md | Decisões técnicas, stack, princípios |
+| 00_GOVERNO/ARQUITECTURA.md | Decisões técnicas, stack, princípios, pipeline |
 | 00_GOVERNO/ROADMAP.md | Estado actual, próximo passo |
-| 00_GOVERNO/DECISAO-APP-STREAMLIT-v2.md | Arquitectura completa da app (decisão fechada) |
-| 01_AUDITORIAS/*.md | Contexto de pesquisa e decisões passadas |
-| 00_GOVERNO/Arquivo/ | Versões anteriores de decisões (arquivo) |
+| 00_GOVERNO/DECISAO-APP-STREAMLIT-v2.md | Arquitectura da app Streamlit (decisão fechada) |
+| 00_GOVERNO/DECISAO-SCHEMA-V2.md | Schema v2 do estrutura.yaml — semantic_type, behavior, registry (D12) |
+| 00_GOVERNO/DECISAO-YAML-ESTRUTURA.md | Porquê YAML em vez de MD (D11) |
+| 01_AUDITORIAS/RESEARCH/ | Auditorias de pesquisa (Gemini, Perplexity) — base das decisões |
+| 00_GOVERNO/Arquivo/ | Versões anteriores de decisões |
 
 ---
 
@@ -244,5 +256,5 @@ A secção "10. ESTADO ACTUAL" deve reflectir sempre o ROADMAP actual.
 
 ---
 
-**Criado:** 2026-04-03 | **Actualizado:** 2026-04-03 | **Agente:** Cowork Governo
+**Criado:** 2026-04-03 | **Actualizado:** 2026-04-03 (v1.3) | **Agente:** Cowork Governo
                                                                             
