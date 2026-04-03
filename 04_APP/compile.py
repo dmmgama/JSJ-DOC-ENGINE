@@ -24,6 +24,7 @@ from pathlib import Path
 import yaml
 
 import preprocessor
+from semantic_type_registry import resolve_behavior
 
 
 PANDOC_INSTALL_URL = "https://pandoc.org/installing.html"
@@ -115,6 +116,25 @@ def _collect_sections(cfg: dict, source_root: Path) -> list[dict]:
     return included
 
 
+def _injectar_marcadores(elemento: dict) -> str:
+    """
+    Retorna string MD com marcadores de paginação a injectar
+    antes do conteúdo do elemento, com base no behavior resolvido.
+    """
+    behavior = resolve_behavior(elemento)
+    marcadores = []
+
+    if behavior["section_break_before"]:
+        if behavior["orientation"] == "landscape":
+            marcadores.append("<!-- sectionbreak-landscape -->")
+        else:
+            marcadores.append("<!-- sectionbreak -->")
+    elif behavior["page_break_before"]:
+        marcadores.append("<!-- pagebreak -->")
+
+    return "\n".join(marcadores) + "\n" if marcadores else ""
+
+
 def _build_combined_md(sections: list[dict], source_root: Path) -> str:
     """Lê, pré-processa e concatena os MD das secções activas."""
     parts = []
@@ -122,7 +142,9 @@ def _build_combined_md(sections: list[dict], source_root: Path) -> str:
         md_path = source_root / sec['path']
         md_text = md_path.read_text(encoding='utf-8')
         processed = preprocessor.process_markdown(md_text, base_path=md_path.parent)
-        parts.append(processed)
+        # Injectar marcadores de paginação antes do conteúdo da secção
+        marcadores = _injectar_marcadores(sec)
+        parts.append(marcadores + processed)
 
     # Separador entre secções: linha em branco
     return '\n\n'.join(parts)
@@ -137,12 +159,15 @@ def _run_pandoc(pandoc_bin: str, md_content: str, template_docx: Path, output_pa
         tmp_path = Path(tmp.name)
 
     try:
+        lua_filter = Path(__file__).parent / "filters" / "pagebreak.lua"
+
         cmd = [
             pandoc_bin,
             str(tmp_path),
             '--from=markdown',
             '--to=docx',
             f'--reference-doc={template_docx}',
+            '--lua-filter', str(lua_filter),
             '--output', str(output_path),
         ]
 

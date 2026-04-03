@@ -42,9 +42,12 @@ Estado do projecto → `00_GOVERNO\ROADMAP.md`
 | Ficheiro | Responsabilidade |
 |----------|----------------|
 | `app.py` | UI Streamlit — lê `estrutura.yaml`, `mapeamento.yaml` — 3 camadas + snapshot |
-| `compile.py` | Orquestrador: lê mapeamento → agrega MD → Pandoc → DOCX |
-| `preprocessor.py` | Substitui tags `{{ excel \| ... }}` por tabelas MD |
-| `config.yaml` | Multi-projecto: paths de estrutura.yaml e mapeamento.yaml por projecto |
+| `compile.py` | Orquestrador: resolve behavior → injeccta marcadores → Pandoc + Lua filter → DOCX |
+| `preprocessor.py` | Substitui `{{ excel \| ... }}` por tabelas MD e `{{ VARIAVEL }}` por variaveis.yaml |
+| `semantic_type_registry.py` | Registry de tipos semânticos: defaults hardcoded + `resolve_behavior()` |
+| `migrate_schema_v1_to_v2.py` | Script standalone: migra `estrutura.yaml` v1 (campo `tipo`) → v2 (`semantic_type`) |
+| `config.yaml` | Multi-projecto: paths de estrutura.yaml, mapeamento.yaml, variaveis.yaml por projecto ⏳ |
+| `filters\pagebreak.lua` | Lua filter Pandoc: converte `<!-- pagebreak -->` / `<!-- sectionbreak -->` em OpenXML |
 | `requirements.txt` | Dependências Python |
 | `venv\` | Ambiente virtual — não versionar |
 
@@ -57,8 +60,9 @@ cujos paths estão definidos no `config.yaml`:
 
 | Ficheiro | Conteúdo |
 |----------|---------|
-| `estrutura.yaml` | Hierarquia do documento (tipo, secções, headings, anexos) |
+| `estrutura.yaml` | Schema v2: `semantic_type` + `behavior` (overrides) + `filhos[]` recursivo |
 | `mapeamento.yaml` | MD sources + templates DOCX por elemento |
+| `variaveis.yaml` | (opcional) Variáveis `{{ VAR }}` para substituição no preprocessor |
 
 Estes ficheiros vivem junto dos projectos-fonte (ex: CTE-TEMPLATE-CLAUDE),
 não dentro de 04_APP.
@@ -117,19 +121,31 @@ CAMADA 3 — TOC Interactivo (tab principal)
 ```
 config.yaml → escolha de projecto
         ↓
-estrutura.yaml + mapeamento.yaml (auto-load ou import)
+estrutura.yaml (v2) + mapeamento.yaml (auto-load ou import)
         ↓
 compile.py
+    ├── lê estrutura.yaml → semantic_type_registry.resolve_behavior() por elemento
     ├── lê mapeamento.yaml
     ├── lê MD de cada elemento
-    ├── preprocessor.py → {{ excel | ... }} substituído por tabelas MD
+    ├── preprocessor.py → {{ excel }} → tabelas MD; {{ VARIAVEL }} → variaveis.yaml
+    ├── injeccta marcadores antes de cada elemento:
+    │       <!-- pagebreak -->          (se behavior.page_break_before)
+    │       <!-- sectionbreak -->       (se behavior.section_break_before)
+    │       <!-- sectionbreak-landscape --> (se orientation=landscape)
     ├── concatena MD processado
     └── Pandoc → DOCX
-            ├── template geral: 02_TEMPLATES\JSJ-CTE-reference.docx
-            └── template por elemento: definido em mapeamento.yaml
+            ├── --lua-filter filters/pagebreak.lua  (converte marcadores em OpenXML)
+            └── --reference-doc 02_TEMPLATES\JSJ-CTE-reference.docx
 ```
 
 Output em: `03_OUTPUT\`
+
+**Semantic Type Registry** (`semantic_type_registry.py`):
+- 12 tipos semânticos: `cover`, `toc`, `list_of_figures`, `list_of_tables`,
+  `front_matter_note`, `revision_history`, `section`, `unnumbered_heading`,
+  `subsection_group`, `annexes`, `annex`, `glossary`
+- `section_role` inferido: `front_matter` / `main_matter` / `back_matter`
+- Overridável por elemento no `estrutura.yaml` (campo `section_role` ou bloco `behavior`)
 
 ---
 
@@ -157,7 +173,11 @@ Ver `00_GOVERNO\ROADMAP.md` para estado detalhado.
 Resumo:
 - `compile.py` ✅ funcional — exportou Secção I do CTE
 - `preprocessor.py` ✅ criado
-- `app.py` ✅ Camada 3 funcional (TOC interactivo, export/import estrutura.yaml + mapeamento.yaml)
+- `app.py` ✅ Camada 3 funcional (TOC interactivo, export/import) + Camada 1 (editor estrutura)
+- `semantic_type_registry.py` ⏳ a criar (prompt IDE: `PROMPT-IDE-SCHEMA-V2.md`)
+- `migrate_schema_v1_to_v2.py` ⏳ a criar (mesmo prompt)
+- `filters\pagebreak.lua` ⏳ a criar (mesmo prompt)
+- `compile.py` ⏳ a actualizar com injecção de marcadores + --lua-filter (mesmo prompt)
 - `config.yaml` ⏳ a criar com schema multi-projecto
 
 ---
