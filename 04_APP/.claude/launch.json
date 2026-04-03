@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "streamlit",
+      "runtimeExecutable": "C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/04_APP/venv/Scripts/streamlit.exe",
+      "runtimeArgs": ["run", "app.py", "--server.port", "8501"],
+      "port": 8501
+    }
+  ]
+}

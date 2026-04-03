@@ -2,15 +2,8 @@ defaults:
   output_dir: C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/03_OUTPUT
   reference_doc: C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/02_TEMPLATES/JSJ-CTE-reference.docx
   templates_dir: C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/02_TEMPLATES
-last_project: CTE-SecI
+last_project: cte
 projects:
-- estrutura: C:/Users/JSJ/JSJ AI/CTE/CTE-TEMPLATE-CLAUDE/estrutura_v2.yaml
-  id: CTE-SecI
-  mapeamento: C:/Users/JSJ/JSJ AI/CTE/CTE-TEMPLATE-CLAUDE/mapeamento.yaml
-  name: CTE Fundações e Estruturas
-  variaveis: ''
-- estrutura: C:\Users\JSJ\JSJ AI\CTE
-  id: aaa
-  mapeamento: C:\Users\JSJ\JSJ AI\CTE
-  name: aaa
-  variaveis: C:\Users\JSJ\JSJ AI\CTE
+- estrutura: C:\Users\JSJ\JSJ AI\CTE\CTE-TEMPLATE-CLAUDE\estrutura.yaml
+  id: cte
+  mapeamento: C:\Users\JSJ\JSJ AI\CTE\CTE-TEMPLATE-CLAUDE\mapeamento.yaml

@@ -1,7 +1,7 @@
 # ROADMAP — JSJ-DOC-ENGINE
 
-> **Versão:** 1.8 — Abril 2026
-> **Estado:** 🟢 Fase 1 concluída — Fase 2 em curso (Camada 3 ✅, D11 YAML ✅, Camada 1 ✅, D12 schema v2 + Lua filter ⏳ prompt IDE pronto)
+> **Versão:** 1.10 — Abril 2026
+> **Estado:** 🟢 Fase 1 concluída — Fase 2 em curso (Camada 3 ✅, D11 YAML ✅, Camada 1 ✅, Schema v2 + Lua filter ⏳ IDE pronto, config.yaml multi-projecto ✅, Camada 2 ✅ executada, compile.py v2 ⏳ IDE pronto, Bugfix app.py ⏳ IDE pronto, LLM Guide v1 ✅)
 > **Documento de referência:** `README.md` (raiz)
 
 ---
@@ -36,17 +36,23 @@
 - [x] Camada 3: Preview de numeração em tempo real
 - [x] Camada 3: Toggle N/A + reordenação com setas
 - [x] Migração parsers MD → YAML (D11) — `parse_estrutura_yaml()`, `parse_mapeamento_yaml()` — testado com 68 elementos ✅
-- [x] Camada 1: Editor de estrutura do documento
-- [ ] **Schema v2** (D12): `semantic_type` + `behavior` + `section_role` inferido + Lua filter + migração v1→v2
-      → Prompt IDE: `PROMPT-IDE-SCHEMA-V2.md` | Decisão: `DECISAO-SCHEMA-V2.md`
-      → Entregas: `semantic_type_registry.py`, `migrate_schema_v1_to_v2.py`, `filters/pagebreak.lua`, compile.py actualizado
-- [ ] Migração manual `estrutura.yaml` CTE → v2 (executar `migrate_schema_v1_to_v2.py`)
-- [ ] config.yaml multi-projecto + auto-load no arranque → Prompt IDE: `PROMPT-IDE-CONFIG-YAML.md`
-- [ ] `variaveis.yaml` por projecto + substituição `{{ VARIAVEL }}` no preprocessor.py  *(depende do config.yaml multi-projecto)*
-- [ ] Camada 2: Mapeamento MD sources + templates DOCX → Prompt IDE: `PROMPT-IDE-CAMADA2-MVP.md`
-- [ ] Camada 1 v2: `semantic_type` + editor `behavior` por elemento → Prompt IDE: `PROMPT-IDE-CAMADA1-V2.md`
+- [x] Camada 1: Editor de estrutura do documento (v1 — campo `tipo` string livre)
+- [x] config.yaml multi-projecto — lista `projects`, `defaults`, `last_project` → Prompt IDE: `PROMPT-IDE-CONFIG-YAML.md` ✅ executado
+- [x] `semantic_type_registry.py` — registry de 12 tipos, defaults hardcoded, `resolve_behavior()` ✅ executado pelo IDE
+- [x] `filters/pagebreak.lua` — Lua filter: `<!-- pagebreak/sectionbreak/sectionbreak-landscape -->` → OpenXML ✅ executado
+- [x] `migrate_schema_v1_to_v2.py` — script standalone de migração ✅ executado
+- [ ] **Schema v2 — app.py Camada 1 v2**: `semantic_type` enum + editor `behavior` por elemento
+      → Prompt IDE: `PROMPT-IDE-CAMADA1-V2.md` ⏳ **PRONTO PARA EXECUTAR**
+- [ ] **compile.py v2**: lê `estrutura.yaml` + `mapeamento.yaml` em vez do config v0
+      → Prompt IDE: `PROMPT-IDE-COMPILE-V2.md` ⏳ **PRONTO PARA EXECUTAR** ← **PRÓXIMO**
+- [ ] Migração manual `estrutura.yaml` CTE → v2 (executar `migrate_schema_v1_to_v2.py`) *(depende compile.py v2)*
+- [x] **Camada 2**: tab Mapeamento MD sources + templates DOCX por elemento
+      → Prompt IDE: `PROMPT-IDE-CAMADA2-MVP.md` ✅ executado
+- [ ] **Bugfix app.py v1**: widget state, apagar projectos, template, paths config
+      → Prompt IDE: `PROMPT-IDE-BUGFIX-APP-V1.md` ⏳ **PRONTO PARA EXECUTAR** ← **PRÓXIMO**
+- [ ] `variaveis.yaml` por projecto + substituição `{{ VARIAVEL }}` no preprocessor.py *(depende config.yaml multi-projecto — já feito)*
 - [ ] Função Snapshot (Modo A ficheiro inteiro + Modo B divisão por heading com filhos)
-- [ ] Integração: app.py → compile.py → DOCX real
+- [ ] **Gate: Integração app.py → compile.py v2 → DOCX real** *(depende compile.py v2 + Camada 2)*
 
 **Gate:** David consegue compilar um DOCX parcial sem abrir terminal.
 
@@ -56,7 +62,7 @@
 
 **Objectivo:** Protocolo de integração entre projectos Cowork JSJ e o DOC-ENGINE.
 
-- [ ] `LLM_GUIDE.md` — contrato de interface (formato estrutura.yaml + mapeamento.yaml, regras de slugs)
+- [x] `LLM_GUIDE.md` — contrato de interface (formato estrutura.yaml + mapeamento.yaml, regras de slugs) ✅ v1.0 criado
 - [ ] Comando "exportar para JSJDOC" implementado nos projectos Cowork JSJ
 - [ ] Teste de integração: CTE-TEMPLATE-CLAUDE → DOC-ENGINE
 
@@ -118,4 +124,25 @@ Tab "Estrutura": carregar ficheiro → metadados → tipos disponíveis (adicion
 
 ---
 
-**Fim — ROADMAP.md v1.8 — 2026-04-03**
+## PROMPTS IDE CRIADOS (prontos a dar ao agente VSCode)
+
+| Ficheiro | Tarefa | Estado |
+|----------|--------|--------|
+| `PROMPT-IDE-SCHEMA-V2.md` | semantic_type_registry.py + migrate + Lua filter + compile.py (stub) | ✅ executado |
+| `PROMPT-IDE-CONFIG-YAML.md` | config.yaml multi-projecto + selectbox na app | ✅ executado |
+| `PROMPT-IDE-CAMADA2-MVP.md` | tab Mapeamento na app | ⏳ aguarda execução |
+| `PROMPT-IDE-CAMADA1-V2.md` | Camada 1 com semantic_type + behavior editor | ⏳ aguarda execução |
+| `PROMPT-IDE-COMPILE-V2.md` | compile.py v2 — lê estrutura.yaml + mapeamento.yaml | ⏳ aguarda execução |
+| `PROMPT-IDE-BUGFIX-APP-V1.md` | Bugfix app.py: widget state, apagar projectos, template, paths | ⏳ **PRONTO PARA EXECUTAR** ← **PRÓXIMO** |
+
+---
+
+## LLM GUIDE (criado 2026-04-03)
+
+Ficheiro: `00_GOVERNO/LLM_GUIDE.md` — v1.0 criado.
+Contrato de interface para agentes LLM que produzem `estrutura.yaml` + `mapeamento.yaml`.
+Cobre: semantic types, regras de slugs, schema mapeamento, padrões de documentos JSJ.
+
+---
+
+**Fim — ROADMAP.md v1.10 — 2026-04-03**

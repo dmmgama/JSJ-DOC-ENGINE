@@ -1,7 +1,7 @@
 # ARQUITECTURA — JSJ-DOC-ENGINE
 
-> **Versão:** 1.2 — Abril 2026
-> **Estado:** Fase 1 concluída — Fase 2 em desenvolvimento
+> **Versão:** 1.4 — Abril 2026
+> **Estado:** Fase 1 concluída — Fase 2 em desenvolvimento (compile.py v2 + Camada 2 pendentes)
 
 ---
 
@@ -73,8 +73,13 @@ Qualquer conceito específico de um documento (ex: MAT, EXEC,
 | Orquestrador | Python 3.x + PyYAML | Simples, legível, maintível. |
 | UI | Streamlit | Local, sem deploy, sem infra. |
 | Pós-processamento | python-docx | Pontual — só onde Pandoc não chega. |
-| Preprocessador Excel | preprocessor.py + openpyxl/pandas | Injecta tabelas Excel em MD antes do Pandoc. |
-| Configuração | config.yaml | Fonte de verdade da estrutura de cada documento. |
+| Preprocessador | preprocessor.py | `{{ excel }}` → tabelas MD; `{{ VARIAVEL }}` → variaveis.yaml |
+| Registry de tipos | semantic_type_registry.py | 12 semantic_types; defaults hardcoded; resolve_behavior() |
+| Paginação/secções | filters/pagebreak.lua | Lua filter Pandoc; page/section breaks via comentários HTML |
+| Configuração | config.yaml multi-projecto | defaults + lista projects + last_project |
+| Definição do documento | estrutura.yaml (schema v2) | semantic_type + behavior (overrides) + filhos[] recursivo |
+| Mapeamento de conteúdo | mapeamento.yaml | md_source + template_docx por elemento |
+| Variáveis | variaveis.yaml (opcional) | Substituições {{ VAR }} por projecto/obra |
 | Supabase | — | Fora do scope MVP. Fase posterior. |
 
 **Não usar:** LangChain, frameworks pesadas, dependências exóticas,
@@ -163,15 +168,15 @@ Path de cada ficheiro definido em `config.yaml` (campo `variaveis:` opcional).
 
 ```
 04_APP\
-├── app.py                      ← UI Streamlit (3 camadas + snapshot)
-├── compile.py                  ← orquestrador de compilação
-├── preprocessor.py             ← tags {{ excel }} e {{ VARIAVEL }} → MD
-├── semantic_type_registry.py   ← registry de tipos semânticos + defaults + resolve_behavior()
-├── migrate_schema_v1_to_v2.py  ← script standalone: migra estrutura.yaml v1 → v2
-├── config.yaml                 ← multi-projecto + paths defaults  ⏳
+├── app.py                      ← UI Streamlit (3 camadas + snapshot) — Camada 1 v1 + Camada 3 ✅
+├── compile.py                  ← orquestrador de compilação — v2 PENDENTE (prompt IDE pronto)
+├── preprocessor.py             ← tags {{ excel }} e {{ VARIAVEL }} → MD ✅
+├── semantic_type_registry.py   ← registry 12 tipos semânticos + defaults + resolve_behavior() ✅
+├── migrate_schema_v1_to_v2.py  ← script standalone: migra estrutura.yaml v1 → v2 ✅
+├── config.yaml                 ← multi-projecto: defaults + projects[] + last_project ✅
 ├── requirements.txt
 ├── filters\
-│   └── pagebreak.lua           ← Lua filter Pandoc: page/section breaks via comentários HTML
+│   └── pagebreak.lua           ← Lua filter Pandoc: <!-- pagebreak/sectionbreak --> → OpenXML ✅
 └── venv\
 ```
 
@@ -232,6 +237,8 @@ O utilizador pode sempre adicionar/remover projectos da lista sem apagar ficheir
 | D12 | Schema estrutura.yaml | v2: `semantic_type` + `behavior` (overrides) + `section_role` inferido; defaults hardcoded em `semantic_type_registry.py` | Flags avulsas (`is_annex`, `is_toc`…) — redundantes e contraditórias |
 | D12a | Pipeline paginação | 3 tiers: Pandoc nativo → Lua filter (`filters/pagebreak.lua`) → python-docx (fase posterior) | Tudo no Pandoc (não chega) ou tudo no python-docx (frágil) |
 | D12b | `section_role` | Inferido do `semantic_type`; overridável por elemento quando necessário | Campo obrigatório manual — ruído no YAML |
+| D13 | compile.py v2 | Lê `estrutura.yaml` + `mapeamento.yaml` via `config.yaml` multi-projecto; arg `--project <id>` | Continuar a usar schema v0 (campos `document`/`paths`/`sections` no config) |
+| D14 | Placeholders {{ VARIAVEL }} | `variaveis.yaml` por projecto; preprocessor.py substitui antes de Pandoc | Embeber valores directamente nos MD |
 
 ---
 
@@ -246,4 +253,26 @@ O utilizador pode sempre adicionar/remover projectos da lista sem apagar ficheir
 
 ---
 
-**Fim — ARQUITECTURA.md v1.3 — 2026-04-03**
+---
+
+## 10. ESTADO ACTUAL DA FASE 2 (Abril 2026)
+
+| Componente | Estado | Observação |
+|------------|--------|-----------|
+| Camada 3 (TOC + export/import) | ✅ funcional | Dados mock → real via Camada 1+2 |
+| Camada 1 v1 (editor estrutura, campo `tipo`) | ✅ funcional | Migrar para semantic_type (prompt pronto) |
+| semantic_type_registry.py | ✅ criado pelo IDE | 12 tipos, resolve_behavior() |
+| filters/pagebreak.lua | ✅ criado pelo IDE | page/section/landscape |
+| migrate_schema_v1_to_v2.py | ✅ criado pelo IDE | |
+| config.yaml multi-projecto | ✅ substituído | CTE-SecI como projecto activo |
+| compile.py v2 | ⏳ prompt pronto | `PROMPT-IDE-COMPILE-V2.md` — **PRÓXIMO A EXECUTAR** |
+| Camada 2 (mapeamento) | ⏳ prompt pronto | `PROMPT-IDE-CAMADA2-MVP.md` |
+| Camada 1 v2 (semantic_type + behavior) | ⏳ prompt pronto | `PROMPT-IDE-CAMADA1-V2.md` |
+| variaveis.yaml + preprocessor | ⏳ não iniciado | Após compile.py v2 |
+| Snapshot | ⏳ não iniciado | Fase posterior |
+
+**Bloqueio actual:** compile.py usa schema v0 → sem compilação real até executar PROMPT-IDE-COMPILE-V2.md.
+
+---
+
+**Fim — ARQUITECTURA.md v1.4 — 2026-04-03**

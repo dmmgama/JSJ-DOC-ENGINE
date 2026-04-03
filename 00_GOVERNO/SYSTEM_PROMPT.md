@@ -1,7 +1,7 @@
 # JSJ-DOC-ENGINE — System Prompt para Cowork
 
 **Data:** 2026-04-03
-**Versão:** 1.3
+**Versão:** 1.4
 **Público:** Agente Cowork governando JSJ-DOC-ENGINE
 
 ---
@@ -63,11 +63,14 @@ Projectos relacionados (não gerir aqui):
 
 No início de cada sessão:
 1. Ler README.md
-2. Ler 00_GOVERNO/ROADMAP.md para saber onde estamos
+2. Ler 00_GOVERNO/ROADMAP.md → secção "PROMPTS IDE CRIADOS" para estado actual
 3. Identificar a tarefa: governo/estratégia ou desenvolvimento
 4. Se governo → executar aqui
-5. Se desenvolvimento → preparar prompt para IDE
+5. Se desenvolvimento → verificar se já existe prompt IDE em 00_GOVERNO/ antes de criar novo
 6. Perguntar a David se a tarefa não for clara
+
+**Estado actual (sessão anterior):** compile.py v2 é o próximo passo.
+Prompt pronto: `00_GOVERNO/PROMPT-IDE-COMPILE-V2.md`.
 
 ### SEMPRE:
 
@@ -164,17 +167,18 @@ Defaults hardcoded em `semantic_type_registry.py` — não no YAML.
 Os paths são definidos em `config.yaml`.
 Migração v1→v2: script `04_APP/migrate_schema_v1_to_v2.py` — executar manualmente.
 
-## LLM GUIDE (futuro — Fase 3)
+## LLM GUIDE
 
-Ficheiro: `00_GOVERNO/LLM_GUIDE.md` — a criar na Fase 3.
+Ficheiro: `00_GOVERNO/LLM_GUIDE.md` — v1.0 ✅
 
 **É o contrato de interface entre projectos JSJ e o DOC-ENGINE.**
 Qualquer agente LLM (Cowork CTE, Cowork MQT, etc.) que queira
 produzir ficheiros compatíveis lê este guia e usa o comando
 "exportar para JSJDOC" para gerar `estrutura.yaml` + `mapeamento.yaml`.
 
-Não criar este ficheiro antes de estrutura.yaml e mapeamento.yaml
-estarem validados em ambiente real (Fase 2 concluída).
+Cobre: semantic types (enum fechado de 12 tipos), regras de slugs,
+schema v2 da estrutura, schema do mapeamento, padrões de documentos JSJ,
+anti-padrões.
 
 ---
 
@@ -204,15 +208,15 @@ estarem validados em ambiente real (Fase 2 concluída).
 
 ```
 04_APP\
-├── app.py                      ← UI Streamlit (3 camadas + snapshot)
-├── compile.py                  ← orquestrador: resolve behavior → injeccta marcadores → Pandoc
-├── preprocessor.py             ← {{ excel }} e {{ VARIAVEL }} → MD
-├── semantic_type_registry.py   ← registry de tipos semânticos + defaults + resolve_behavior()
-├── migrate_schema_v1_to_v2.py  ← migração estrutura.yaml v1 → v2 (standalone)
-├── config.yaml                 ← multi-projecto + paths  ⏳ a criar
+├── app.py                      ← UI Streamlit — Camada 1 v1 ✅ + Camada 3 ✅ (Camada 2 pendente)
+├── compile.py                  ← ATENÇÃO: ainda schema v0 — v2 pendente (PROMPT-IDE-COMPILE-V2.md)
+├── preprocessor.py             ← {{ excel }} e {{ VARIAVEL }} → MD ✅
+├── semantic_type_registry.py   ← registry 12 tipos + defaults + resolve_behavior() ✅
+├── migrate_schema_v1_to_v2.py  ← migração estrutura.yaml v1 → v2 (standalone) ✅
+├── config.yaml                 ← multi-projecto: defaults + projects[] + last_project ✅
 ├── requirements.txt
 ├── filters\
-│   └── pagebreak.lua           ← Lua filter: <!-- pagebreak/sectionbreak --> → OpenXML
+│   └── pagebreak.lua           ← Lua filter: <!-- pagebreak/sectionbreak --> → OpenXML ✅
 └── venv\
 ```
 
@@ -233,6 +237,13 @@ Ficheiros de trabalho por projecto (fora de `04_APP\`, paths em `config.yaml`):
 | 00_GOVERNO/DECISAO-APP-STREAMLIT-v2.md | Arquitectura da app Streamlit (decisão fechada) |
 | 00_GOVERNO/DECISAO-SCHEMA-V2.md | Schema v2 do estrutura.yaml — semantic_type, behavior, registry (D12) |
 | 00_GOVERNO/DECISAO-YAML-ESTRUTURA.md | Porquê YAML em vez de MD (D11) |
+| 00_GOVERNO/PROMPT-IDE-COMPILE-V2.md | Reescrever compile.py — schema v2 ← **PRÓXIMO A EXECUTAR** |
+| 00_GOVERNO/PROMPT-IDE-CAMADA2-MVP.md | Tab Mapeamento na app |
+| 00_GOVERNO/PROMPT-IDE-BUGFIX-APP-V1.md | Bugfix app.py: widget state, apagar projectos, template, paths ← **PRÓXIMO** |
+| 00_GOVERNO/PROMPT-IDE-CAMADA1-V2.md | Camada 1 com semantic_type + behavior |
+| 00_GOVERNO/LLM_GUIDE.md | Contrato de interface para LLMs — schema, tipos, regras |
+| 00_GOVERNO/PROMPT-IDE-SCHEMA-V2.md | Schema v2 completo (registry + Lua + migrate) — já executado |
+| 00_GOVERNO/PROMPT-IDE-CONFIG-YAML.md | config.yaml multi-projecto — já executado |
 | 01_AUDITORIAS/RESEARCH/ | Auditorias de pesquisa (Gemini, Perplexity) — base das decisões |
 | 00_GOVERNO/Arquivo/ | Versões anteriores de decisões |
 
@@ -256,5 +267,5 @@ A secção "10. ESTADO ACTUAL" deve reflectir sempre o ROADMAP actual.
 
 ---
 
-**Criado:** 2026-04-03 | **Actualizado:** 2026-04-03 (v1.3) | **Agente:** Cowork Governo
+**Criado:** 2026-04-03 | **Actualizado:** 2026-04-03 (v1.4) | **Agente:** Cowork Governo
                                                                             

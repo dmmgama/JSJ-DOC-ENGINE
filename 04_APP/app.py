@@ -77,6 +77,9 @@ def inicializar_estado() -> None:
     # Multi-projecto — path do mapeamento.yaml carregado
     if "mapeamento_yaml_path" not in st.session_state:
         st.session_state.mapeamento_yaml_path = ""
+    # Confirmação de apagar projecto (dois passos)
+    if "confirmar_apagar_proj" not in st.session_state:
+        st.session_state.confirmar_apagar_proj = False
 
 
 # ---------------------------------------------------------------------------
@@ -690,11 +693,24 @@ def carregar_projecto(projecto: dict) -> None:
     """
     Carrega estrutura.yaml e mapeamento.yaml do projecto para session_state.
     Actualiza estrutura_yaml_raw, estrutura_yaml_path, mapeamento e mapeamento_yaml_path.
+    Se o path é um directório, tenta append dos nomes de ficheiro esperados.
     """
     path_estrutura  = projecto.get("estrutura", "")
     path_mapeamento = projecto.get("mapeamento", "")
 
-    if path_estrutura and Path(path_estrutura).exists():
+    # Fallback: se path é directório, tentar append do nome de ficheiro
+    if path_estrutura and Path(path_estrutura).is_dir():
+        for candidato in ("estrutura_v2.yaml", "estrutura.yaml"):
+            p_cand = Path(path_estrutura) / candidato
+            if p_cand.is_file():
+                path_estrutura = str(p_cand)
+                break
+    if path_mapeamento and Path(path_mapeamento).is_dir():
+        p_cand = Path(path_mapeamento) / "mapeamento.yaml"
+        if p_cand.is_file():
+            path_mapeamento = str(p_cand)
+
+    if path_estrutura and Path(path_estrutura).is_file():
         with open(path_estrutura, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         _migrar_v1_para_v2(raw.get("elementos", []))
@@ -711,15 +727,26 @@ def carregar_projecto(projecto: dict) -> None:
         if path_estrutura:
             st.warning(f"estrutura.yaml não encontrado: {path_estrutura}")
 
-    if path_mapeamento and Path(path_mapeamento).exists():
+    if path_mapeamento and Path(path_mapeamento).is_file():
         with open(path_mapeamento, "r", encoding="utf-8") as f:
             conteudo_map = f.read()
-        st.session_state.mapeamento          = parse_mapeamento_yaml(conteudo_map)
+        mapeamento_novo = parse_mapeamento_yaml(conteudo_map)
+
+        # Limpar widget keys da Camada 2 para forçar reinicialização com novos valores
+        for el in mapeamento_novo.get("elementos", []):
+            slug = el.get("slug", "")
+            for sufixo in ("_md_source", "_md_scope", "_template", "_nota"):
+                key = f"map_{slug}{sufixo}"
+                if key in st.session_state:
+                    del st.session_state[key]
+
+        st.session_state.mapeamento           = mapeamento_novo
         st.session_state.mapeamento_yaml_path = path_mapeamento
 
     st.session_state.projecto_activo = {
-        "id":   projecto.get("id", ""),
-        "name": projecto.get("name", ""),
+        "id":            projecto.get("id", ""),
+        "name":          projecto.get("name", ""),
+        "reference_doc": projecto.get("reference_doc", ""),
     }
 
 
@@ -779,50 +806,56 @@ def _renderizar_camada2(elementos_flat: list, map_actual: dict) -> None:
         # Indentação visual por profundidade
         margem = "\u3000" * prof  # espaço largo U+3000
 
-        # Valores actuais do mapeamento (ou defaults vazios)
+        # Valores do mapeamento carregado
         map_el = map_actual.get(slug, {})
-        md_source_actual     = map_el.get("md_source", "")
-        md_scope_actual      = map_el.get("md_scope", "ficheiro_inteiro")
-        template_docx_actual = map_el.get("template_docx", "default")
-        nota_actual          = map_el.get("nota", "")
+
+        # Inicializar widget keys no session_state SE ainda não existirem.
+        # Garante que o primeiro rerun usa os valores do mapeamento,
+        # e reruns seguintes preservam o que o utilizador editou.
+        key_md   = f"map_{slug}_md_source"
+        key_sc   = f"map_{slug}_md_scope"
+        key_tpl  = f"map_{slug}_template"
+        key_nota = f"map_{slug}_nota"
+
+        if key_md not in st.session_state:
+            st.session_state[key_md]   = map_el.get("md_source", "")
+        if key_sc not in st.session_state:
+            scope_val = map_el.get("md_scope", "ficheiro_inteiro")
+            st.session_state[key_sc] = scope_val if scope_val in MD_SCOPE_OPCOES else MD_SCOPE_OPCOES[0]
+        if key_tpl not in st.session_state:
+            st.session_state[key_tpl]  = map_el.get("template_docx", "default")
+        if key_nota not in st.session_state:
+            st.session_state[key_nota] = map_el.get("nota", "")
 
         with st.expander(
             f"{margem}**{slug}** · *{semantic_type}* — {titulo}",
-            expanded=(md_source_actual == ""),  # aberto se ainda sem source
+            expanded=(st.session_state[key_md] == ""),  # aberto se ainda sem source
         ):
             col1, col2 = st.columns([3, 1])
 
+            # NÃO passar value= — o Streamlit usa o valor de session_state[key]
             md_source = col1.text_input(
                 "Ficheiro MD (path absoluto)",
-                value=md_source_actual,
-                key=f"map_{slug}_md_source",
+                key=key_md,
                 placeholder=r"C:\caminho\para\ficheiro.md",
             )
 
-            idx_scope = (
-                MD_SCOPE_OPCOES.index(md_scope_actual)
-                if md_scope_actual in MD_SCOPE_OPCOES
-                else 0
-            )
             md_scope = col2.selectbox(
                 "Scope",
                 MD_SCOPE_OPCOES,
-                index=idx_scope,
-                key=f"map_{slug}_md_scope",
+                key=key_sc,
             )
 
             col3, col4 = st.columns([3, 1])
 
             template_docx = col3.text_input(
                 "Template DOCX (deixar 'default' para usar o geral)",
-                value=template_docx_actual,
-                key=f"map_{slug}_template",
+                key=key_tpl,
             )
 
             nota = col4.text_input(
                 "Nota",
-                value=nota_actual,
-                key=f"map_{slug}_nota",
+                key=key_nota,
             )
 
             # Validação: avisar se md_source não existe no disco
@@ -840,7 +873,7 @@ def _renderizar_camada2(elementos_flat: list, map_actual: dict) -> None:
         })
 
     # Guardar em session_state continuamente
-    if not st.session_state.mapeamento:
+    if not st.session_state.get("mapeamento"):
         st.session_state.mapeamento = {}
     st.session_state.mapeamento["elementos"] = novo_mapeamento_elementos
 
@@ -855,21 +888,24 @@ def _renderizar_camada2(elementos_flat: list, map_actual: dict) -> None:
         key="map_export_path",
         placeholder=r"C:\caminho\para\mapeamento.yaml",
     )
-    if col_btn.button("💾 Guardar mapeamento.yaml", use_container_width=True, key="map_btn_guardar"):
+    if col_btn.button("💾 Guardar mapeamento.yaml", width="stretch", key="map_btn_guardar"):
         if not path_export.strip():
             st.error("Indica o path de exportação.")
         else:
             try:
+                # Resolver reference_doc: projecto_activo > defaults do config
+                _defaults_cfg = carregar_config().get("defaults", {})
+                _ref_doc = (
+                    st.session_state.projecto_activo.get("reference_doc")
+                    or _defaults_cfg.get("reference_doc", "")
+                )
                 dados_export = {
                     "doc_id":        st.session_state.projecto_activo.get("id", ""),
                     "doc_title":     st.session_state.projecto_activo.get("name", ""),
                     "estrutura_ref": "estrutura.yaml",
                     "data":          str(__import__("datetime").date.today()),
                     "templates": {
-                        "geral": st.session_state.projecto_activo.get(
-                            "reference_doc",
-                            "C:/Users/JSJ/JSJ AI/JSJ-DOC-ENGINE/02_TEMPLATES/JSJ-CTE-reference.docx"
-                        )
+                        "geral": _ref_doc,
                     },
                     "elementos": novo_mapeamento_elementos,
                 }
@@ -915,7 +951,7 @@ with st.sidebar:
     st.subheader("Projecto activo")
 
     if _projs_sb:
-        _nomes_sb = [p["name"] for p in _projs_sb]
+        _nomes_sb = [p.get("name", p.get("id", "sem nome")) for p in _projs_sb]
         _id_actual = st.session_state.projecto_activo.get("id", "")
         _idx_actual = next(
             (i for i, p in enumerate(_projs_sb) if p["id"] == _id_actual), 0
@@ -928,7 +964,8 @@ with st.sidebar:
             key="sel_projecto",
             label_visibility="collapsed",
         )
-        if st.button("Carregar", use_container_width=True, key="btn_carregar_proj"):
+        col_load, col_del = st.columns([3, 1])
+        if col_load.button("Carregar", width="stretch", key="btn_carregar_proj"):
             _proj_sel = _projs_sb[_idx_sel]
             carregar_projecto(_proj_sel)
             st.session_state.projecto_carregado = True
@@ -937,6 +974,52 @@ with st.sidebar:
             guardar_config(_cfg_sb)
             st.toast(f"✅ Projecto carregado: {_proj_sel['name']}", icon="✅")
             st.rerun()
+
+        # Confirmação em dois passos para apagar projecto
+        if st.session_state.confirmar_apagar_proj:
+            st.warning(f"Apagar projecto **{_projs_sb[_idx_sel]['name']}** e os seus ficheiros do disco?")
+            col_sim, col_nao = st.columns(2)
+            if col_sim.button("✅ Sim, apagar", key="btn_confirm_del_proj"):
+                _proj_a_apagar = _projs_sb[_idx_sel]
+                # Apagar ficheiros YAML do disco
+                for campo in ("estrutura", "mapeamento", "variaveis"):
+                    path_f = _proj_a_apagar.get(campo, "")
+                    if path_f and Path(path_f).is_file():
+                        try:
+                            os.remove(path_f)
+                        except Exception:
+                            pass
+                # Remover do config.yaml
+                _cfg_sb["projects"] = [
+                    p for p in _cfg_sb["projects"] if p["id"] != _proj_a_apagar["id"]
+                ]
+                if _cfg_sb.get("last_project") == _proj_a_apagar["id"]:
+                    _cfg_sb["last_project"] = (
+                        _cfg_sb["projects"][0]["id"] if _cfg_sb["projects"] else ""
+                    )
+                guardar_config(_cfg_sb)
+                # Limpar session_state se era o projecto activo
+                if st.session_state.projecto_activo.get("id") == _proj_a_apagar["id"]:
+                    st.session_state.estrutura_yaml_raw   = {}
+                    st.session_state.estrutura_yaml_path  = ""
+                    st.session_state.mapeamento           = {}
+                    st.session_state.mapeamento_yaml_path = ""
+                    st.session_state.projecto_activo      = {"id": "", "name": "", "reference_doc": ""}
+                    st.session_state.projecto_carregado   = False
+                    # Limpar widget keys da Camada 2
+                    keys_to_del = [k for k in st.session_state if k.startswith("map_")]
+                    for k in keys_to_del:
+                        del st.session_state[k]
+                st.session_state.confirmar_apagar_proj = False
+                st.toast(f"✅ Projecto apagado: {_proj_a_apagar['name']}", icon="✅")
+                st.rerun()
+            if col_nao.button("❌ Cancelar", key="btn_cancel_del_proj"):
+                st.session_state.confirmar_apagar_proj = False
+                st.rerun()
+        else:
+            if col_del.button("🗑", key="btn_del_proj", help="Apagar projecto e ficheiros"):
+                st.session_state.confirmar_apagar_proj = True
+                st.rerun()
     else:
         _proj_disp = st.session_state.projecto_activo
         st.markdown(f"**{_proj_disp['name']}**")
@@ -946,15 +1029,24 @@ with st.sidebar:
 
     # ── Novo projecto ─────────────────────────────────────────────────────
     with st.expander("+ Novo projecto", expanded=False):
-        _np_nome       = st.text_input("Nome do projecto",              key="np_nome")
-        _np_estrutura  = st.text_input("Path estrutura.yaml",           key="np_estrutura",
-                                        placeholder=r"C:\caminho\para\estrutura.yaml")
-        _np_mapeamento = st.text_input("Path mapeamento.yaml",          key="np_mapeamento",
-                                        placeholder=r"C:\caminho\para\mapeamento.yaml")
-        _np_variaveis  = st.text_input("Path variaveis.yaml (opcional)",key="np_variaveis",
-                                        placeholder=r"C:\caminho\para\variaveis.yaml")
+        # st.form impede reruns intermédios enquanto o utilizador preenche os campos
+        with st.form(key="form_novo_proj", clear_on_submit=True):
+            _np_nome       = st.text_input("Nome do projecto")
+            _np_estrutura  = st.text_input("Path estrutura.yaml",
+                                            placeholder=r"C:\caminho\para\estrutura.yaml")
+            st.caption("Path do ficheiro .yaml, não da pasta")
+            _np_mapeamento = st.text_input("Path mapeamento.yaml",
+                                            placeholder=r"C:\caminho\para\mapeamento.yaml")
+            st.caption("Path do ficheiro .yaml, não da pasta")
+            _np_variaveis  = st.text_input("Path variaveis.yaml (opcional)",
+                                            placeholder=r"C:\caminho\para\variaveis.yaml")
+            _np_reference  = st.text_input("Template DOCX (reference.docx)",
+                                            placeholder=r"C:\caminho\para\reference.docx",
+                                            value=_cfg_sb.get("defaults", {}).get("reference_doc", ""))
+            st.caption("Deixar vazio para usar o template por defeito em defaults.")
+            _submitted = st.form_submit_button("💾 Gravar projecto", use_container_width=True)
 
-        if st.button("Adicionar ao config.yaml", key="btn_add_proj", use_container_width=True):
+        if _submitted:
             if not _np_nome.strip():
                 st.error("O nome do projecto não pode estar vazio.")
             elif not _np_estrutura.strip():
@@ -968,12 +1060,26 @@ with st.sidebar:
                 # Garantir unicidade do id
                 if _novo_id in _ids_existentes:
                     _novo_id = f"{_novo_id}-{len(_ids_existentes) + 1}"
+                # Auto-append nome de ficheiro se o path é um directório
+                _est_path = _np_estrutura.strip()
+                if _est_path and Path(_est_path).is_dir():
+                    for _cand in ("estrutura_v2.yaml", "estrutura.yaml"):
+                        if (Path(_est_path) / _cand).is_file():
+                            _est_path = str(Path(_est_path) / _cand)
+                            break
+                    else:
+                        _est_path = str(Path(_est_path) / "estrutura.yaml")
+                _map_path = _np_mapeamento.strip()
+                if _map_path and Path(_map_path).is_dir():
+                    _map_path = str(Path(_map_path) / "mapeamento.yaml")
+
                 _novo_proj = {
-                    "id":         _novo_id,
-                    "name":       _np_nome.strip(),
-                    "estrutura":  _np_estrutura.strip(),
-                    "mapeamento": _np_mapeamento.strip(),
-                    "variaveis":  _np_variaveis.strip(),
+                    "id":            _novo_id,
+                    "name":          _np_nome.strip(),
+                    "estrutura":     _est_path,
+                    "mapeamento":    _map_path,
+                    "variaveis":     _np_variaveis.strip(),
+                    "reference_doc": _np_reference.strip(),
                 }
                 if "projects" not in _cfg_add:
                     _cfg_add["projects"] = []
@@ -982,7 +1088,7 @@ with st.sidebar:
                 guardar_config(_cfg_add)
                 carregar_projecto(_novo_proj)
                 st.session_state.projecto_carregado = True
-                st.toast(f"✅ Projecto adicionado: {_np_nome.strip()}", icon="✅")
+                st.toast(f"✅ Projecto gravado: {_np_nome.strip()}", icon="✅")
                 st.rerun()
 
     st.divider()
@@ -1006,7 +1112,7 @@ with st.sidebar:
         # Persistir o path entre reruns
         st.session_state.export_path_estrutura = export_path_est
 
-        if st.button("Exportar estrutura.yaml", use_container_width=True):
+        if st.button("Exportar estrutura.yaml", width="stretch"):
             if not export_path_est.strip():
                 st.error("Defina o path de exportação antes de exportar.")
             else:
@@ -1060,7 +1166,7 @@ with st.sidebar:
         )
         st.session_state.export_path_mapeamento = export_path_map
 
-        if st.button("Exportar mapeamento.yaml", use_container_width=True):
+        if st.button("Exportar mapeamento.yaml", width="stretch"):
             if not export_path_map.strip():
                 st.error("Defina o path de exportação antes de exportar.")
             else:
@@ -1082,13 +1188,16 @@ with st.sidebar:
         if ficheiro_map is not None:
             conteudo_map = ficheiro_map.read().decode("utf-8")
             mapeamento_importado = parse_mapeamento_yaml(conteudo_map)
-            # Só actualiza e notifica se o mapeamento mudou (evitar toast em cada rerun)
-            meta_nova   = mapeamento_importado.get("meta", {})
-            meta_actual = st.session_state.mapeamento.get("meta", {})
-            if meta_nova != meta_actual:
-                st.session_state.mapeamento = mapeamento_importado
-                n_el = len(mapeamento_importado.get("elementos", []))
-                st.toast(f"✅ Mapeamento importado: {n_el} elementos.", icon="✅")
+            # Limpar widget keys da Camada 2 para forçar reinicialização com novos valores
+            for el in mapeamento_importado.get("elementos", []):
+                slug = el.get("slug", "")
+                for sufixo in ("_md_source", "_md_scope", "_template", "_nota"):
+                    key = f"map_{slug}{sufixo}"
+                    if key in st.session_state:
+                        del st.session_state[key]
+            st.session_state.mapeamento = mapeamento_importado
+            n_el = len(mapeamento_importado.get("elementos", []))
+            st.toast(f"✅ Mapeamento importado: {n_el} elementos.", icon="✅")
 
 # ---------------------------------------------------------------------------
 # Tabs principais — Camada 3 (TOC), Camada 1 (Estrutura) e Camada 2 (Mapeamento)
@@ -1161,7 +1270,7 @@ with tab_toc:
     st.button(
         "Compilar DOCX",
         disabled=True,
-        use_container_width=True,
+        width="stretch",
         help="Disponível após configurar mapeamento (Camada 2)",
     )
 
@@ -1173,80 +1282,82 @@ with tab_est:
     st.header("Editor de Estrutura")
 
     # Verificar se o ficheiro foi importado na sidebar — único entry point
-    if not st.session_state.get("estrutura_yaml_raw"):
+    # Nota: NÃO usar st.stop() aqui — mata tabs seguintes (Mapeamento)
+    _tem_estrutura = bool(st.session_state.get("estrutura_yaml_raw"))
+    if not _tem_estrutura:
         st.info("Importe o ficheiro estrutura.yaml na sidebar para começar a editar.")
-        st.stop()
 
-    raw: dict = st.session_state.estrutura_yaml_raw
+    if _tem_estrutura:
+        raw: dict = st.session_state.estrutura_yaml_raw
 
-    # Mostrar qual o ficheiro activo
-    st.caption(f"A editar: {st.session_state.get('estrutura_yaml_path', 'ficheiro importado')}")
+        # Mostrar qual o ficheiro activo
+        st.caption(f"A editar: {st.session_state.get('estrutura_yaml_path', 'ficheiro importado')}")
 
-    st.divider()
+        st.divider()
 
-    # ── Metadados do documento ───────────────────────────────────────────
-    with st.expander("Metadados do documento", expanded=False):
-        col_dt, col_tit_doc = st.columns([2, 5])
-        raw["doc_type"]  = col_dt.text_input("doc_type",  value=raw.get("doc_type", ""),  key="c1_doc_type")
-        raw["doc_title"] = col_tit_doc.text_input("doc_title", value=raw.get("doc_title", ""), key="c1_doc_title")
+        # ── Metadados do documento ───────────────────────────────────────
+        with st.expander("Metadados do documento", expanded=False):
+            col_dt, col_tit_doc = st.columns([2, 5])
+            raw["doc_type"]  = col_dt.text_input("doc_type",  value=raw.get("doc_type", ""),  key="c1_doc_type")
+            raw["doc_title"] = col_tit_doc.text_input("doc_title", value=raw.get("doc_title", ""), key="c1_doc_title")
 
-    st.divider()
+        st.divider()
 
-    # ── Tipos semânticos ──────────────────────────────────────────────────
-    st.subheader("Tipos semânticos")
-    st.caption("Tipos fixos definidos pelo sistema. Para cada elemento escolhe o tipo no editor abaixo.")
+        # ── Tipos semânticos ──────────────────────────────────────────────
+        st.subheader("Tipos semânticos")
+        st.caption("Tipos fixos definidos pelo sistema. Para cada elemento escolhe o tipo no editor abaixo.")
 
-    # Tabela informativa dos tipos e section_role inferido
-    dados_tipos = [
-        {"Tipo": t, "Papel no documento": infer_section_role(t)}
-        for t in SEMANTIC_TYPES
-    ]
-    st.dataframe(dados_tipos, use_container_width=True, hide_index=True)
+        # Tabela informativa dos tipos e section_role inferido
+        dados_tipos = [
+            {"Tipo": t, "Papel no documento": infer_section_role(t)}
+            for t in SEMANTIC_TYPES
+        ]
+        st.dataframe(dados_tipos, width="stretch", hide_index=True)
 
-    tipos = _obter_tipos(raw)
-    st.divider()
+        tipos = _obter_tipos(raw)
+        st.divider()
 
-    # ── Lista de elementos ────────────────────────────────────────────────
-    st.subheader("Elementos")
+        # ── Lista de elementos ────────────────────────────────────────────
+        st.subheader("Elementos")
 
-    elementos_raw: list = raw.setdefault("elementos", [])
+        elementos_raw: list = raw.setdefault("elementos", [])
 
-    # Cabeçalho das colunas
-    ch1, ch2, ch3, ch4, ch5, ch6 = st.columns([2, 3, 2, 1, 1, 1])
-    ch1.caption("Slug"); ch2.caption("Título"); ch3.caption("Tipo semântico")
-    ch4.caption("Nível"); ch5.caption("Ordem"); ch6.caption("Inc.")
+        # Cabeçalho das colunas
+        ch1, ch2, ch3, ch4, ch5, ch6 = st.columns([2, 3, 2, 1, 1, 1])
+        ch1.caption("Slug"); ch2.caption("Título"); ch3.caption("Tipo semântico")
+        ch4.caption("Nível"); ch5.caption("Ordem"); ch6.caption("Inc.")
 
-    _renderizar_lista_elementos(elementos_raw, 0, "c1_el", tipos, elementos_raw)
+        _renderizar_lista_elementos(elementos_raw, 0, "c1_el", tipos, elementos_raw)
 
-    # Limpar elementos raiz marcados para remoção
-    raw["elementos"] = [el for el in elementos_raw if not el.get("_remover")]
+        # Limpar elementos raiz marcados para remoção
+        raw["elementos"] = [el for el in elementos_raw if not el.get("_remover")]
 
-    # Botão novo elemento no nível raiz
-    if st.button("➕ Novo elemento", key="c1_btn_novo_el"):
-        novo_slug = _auto_slug(raw["elementos"])
-        raw["elementos"].append(_elemento_vazio(novo_slug))
-        st.rerun()
+        # Botão novo elemento no nível raiz
+        if st.button("➕ Novo elemento", key="c1_btn_novo_el"):
+            novo_slug = _auto_slug(raw["elementos"])
+            raw["elementos"].append(_elemento_vazio(novo_slug))
+            st.rerun()
 
-    st.divider()
+        st.divider()
 
-    # ── Validação e guardar ───────────────────────────────────────────────
-    erros = _validar_elementos(raw.get("elementos", []))
-    if erros:
-        for msg_erro in erros:
-            st.error(msg_erro)
+        # ── Validação e guardar ───────────────────────────────────────────
+        erros = _validar_elementos(raw.get("elementos", []))
+        if erros:
+            for msg_erro in erros:
+                st.error(msg_erro)
 
-    if st.button("💾 Guardar estrutura", key="c1_btn_guardar",
-                 disabled=bool(erros), use_container_width=True):
-        # Usar o path de exportação definido na sidebar
-        path_guardar = st.session_state.get("export_path_estrutura", "").strip()
-        if not path_guardar:
-            st.error("Defina o path de exportação na sidebar antes de guardar.")
-        else:
-            ok, msg = _guardar_estrutura_yaml_ficheiro(path_guardar, raw)
-            if ok:
-                st.success(msg)
+        if st.button("💾 Guardar estrutura", key="c1_btn_guardar",
+                     disabled=bool(erros), width="stretch"):
+            # Usar o path de exportação definido na sidebar
+            path_guardar = st.session_state.get("export_path_estrutura", "").strip()
+            if not path_guardar:
+                st.error("Defina o path de exportação na sidebar antes de guardar.")
             else:
-                st.error(msg)
+                ok, msg = _guardar_estrutura_yaml_ficheiro(path_guardar, raw)
+                if ok:
+                    st.success(msg)
+                else:
+                    st.error(msg)
 
 
 # ===========================================================================
@@ -1270,7 +1381,7 @@ with tab_map:
         st.stop()
 
     # Obter mapeamento actual indexado por slug
-    map_actual = _mapeamento_por_slug(st.session_state.mapeamento)
+    map_actual = _mapeamento_por_slug(st.session_state.get("mapeamento", {}))
 
     # Renderizar editor de mapeamento
     _renderizar_camada2(elementos_flat, map_actual)
