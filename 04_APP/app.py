@@ -20,6 +20,32 @@ from semantic_type_registry import (
     resolve_behavior,
 )
 
+from core.models import elemento_vazio
+from core.services import (
+    auto_slug,
+    calcular_numeracao,
+    migrar_v1_para_v2,
+    mapeamento_por_slug,
+    obter_elementos_flat,
+    obter_tipos,
+    todos_slugs,
+    validar_elementos,
+)
+from adapters.yaml_io import (
+    carregar_estrutura_yaml,
+    exportar_ficheiro,
+    gerar_estrutura_yaml,
+    gerar_mapeamento_yaml,
+    guardar_estrutura_yaml,
+    parse_estrutura_yaml,
+    parse_mapeamento_yaml,
+)
+from adapters.config import (
+    carregar_config,
+    guardar_config,
+    ler_paths_config,
+)
+
 # ---------------------------------------------------------------------------
 # Configuração da página
 # ---------------------------------------------------------------------------
@@ -83,30 +109,7 @@ def inicializar_estado() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Funções utilitárias — numeração
-# ---------------------------------------------------------------------------
-def calcular_numeracao(elementos: list) -> list:
-    """Recalcula a numeração de todos os elementos.
-
-    Elementos com incluir=True recebem número sequencial (1, 2, 3...).
-    Elementos com incluir=False ficam com '—'.
-    Devolve nova lista com campo 'ordem_display' adicionado.
-    """
-    resultado = []
-    contador = 1
-    for el in elementos:
-        el_copia = dict(el)
-        if el_copia["incluir"]:
-            el_copia["ordem_display"] = str(contador)
-            contador += 1
-        else:
-            el_copia["ordem_display"] = "—"
-        resultado.append(el_copia)
-    return resultado
-
-
-# ---------------------------------------------------------------------------
-# Funções de reordenação
+# Funções de reordenação (acedem a st.session_state — ficam em app.py)
 # ---------------------------------------------------------------------------
 def mover_elemento_cima(idx: int) -> None:
     """Troca o elemento na posição idx com o elemento anterior."""
@@ -114,7 +117,6 @@ def mover_elemento_cima(idx: int) -> None:
         return
     els = st.session_state.elementos
     els[idx], els[idx - 1] = els[idx - 1], els[idx]
-    # Actualizar campo ordem para reflectir nova posição na lista
     for i, el in enumerate(els):
         el["ordem"] = i + 1
 
@@ -130,193 +132,6 @@ def mover_elemento_baixo(idx: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Funções de export — geração de conteúdo
-# ---------------------------------------------------------------------------
-def gerar_estrutura_yaml(elementos: list, projecto: dict) -> str:
-    """Serializa o estado actual da estrutura para YAML.
-
-    Todos os elementos são exportados (incluindo incluir=False).
-    """
-    elementos_yaml = []
-    for el in elementos:
-        item = {
-            "slug":          el["slug"],
-            "titulo":        el["titulo"],
-            "semantic_type": el.get("semantic_type", "section"),
-            "include":       el["incluir"],
-            "ordem":         el["ordem"],
-        }
-        # Adicionar campos opcionais apenas se presentes
-        if el.get("nivel"):
-            item["nivel"] = el["nivel"]
-        if el.get("pai"):
-            item["pai"] = el["pai"]
-        elementos_yaml.append(item)
-
-    dados = {
-        "doc_type":  projecto.get("doc_type", "CTE"),
-        "doc_title": projecto.get("name", ""),
-        "elementos": elementos_yaml,
-    }
-    return yaml.dump(dados, allow_unicode=True, default_flow_style=False, sort_keys=False)
-
-
-def gerar_mapeamento_yaml(elementos: list, projecto: dict) -> str:
-    """Serializa o mapeamento para YAML.
-
-    Inclui apenas elementos com incluir=True.
-    Os campos md_source e template_docx ficam como placeholders.
-    """
-    dados = {
-        "doc_id":        projecto.get("id", ""),
-        "estrutura_ref": "estrutura.yaml",
-        "templates": {
-            "geral": "",
-        },
-        "elementos": [
-            {
-                "slug":          el["slug"],
-                "md_source":     "",
-                "md_scope":      "ficheiro_inteiro",
-                "template_docx": "default",
-            }
-            for el in elementos
-            if el.get("incluir")
-        ],
-    }
-    return yaml.dump(dados, allow_unicode=True, default_flow_style=False, sort_keys=False)
-
-
-def exportar_ficheiro(conteudo: str, caminho: str) -> tuple:
-    """Escreve conteudo para o caminho especificado.
-
-    Devolve (sucesso: bool, mensagem: str).
-    """
-    try:
-        pasta = os.path.dirname(caminho)
-        if pasta:
-            os.makedirs(pasta, exist_ok=True)
-        with open(caminho, "w", encoding="utf-8") as f:
-            f.write(conteudo)
-        return True, f"Ficheiro exportado: {caminho}"
-    except Exception as exc:
-        return False, f"Erro ao exportar: {exc}"
-
-
-# ---------------------------------------------------------------------------
-# Funções de import — parse YAML
-# ---------------------------------------------------------------------------
-def _aplanar_elementos(elementos_yaml: list, pai: str | None, contador: list) -> list:
-    """Recursivamente aplana a hierarquia de filhos numa lista plana.
-
-    Preserva pai, tipo e nivel para re-exportação correcta.
-    """
-    resultado = []
-    for el in elementos_yaml:
-        if not isinstance(el, dict):
-            continue
-        # Compatibilidade retroactiva: converter tipo v1 → semantic_type v2
-        if "tipo" in el and "semantic_type" not in el:
-            el["semantic_type"] = TIPO_V1_TO_SEMANTIC_TYPE.get(el["tipo"], "section")
-            del el["tipo"]
-
-        tipo = el.get("tipo")  # None se já convertido (v1 → v2)
-        nivel_raw = el.get("nivel")  # int (1, 2) ou None
-        # Mapear tipo+nivel para string interna de nível (compatibilidade v1)
-        if tipo == "seccao":
-            nivel_str = "seccao"
-        elif tipo == "anexo":
-            nivel_str = "ANX"
-        elif tipo in ("front_matter", "toc"):
-            nivel_str = tipo
-        else:
-            nivel_str = f"H{nivel_raw}" if nivel_raw else "H1"
-
-        item = {
-            "slug":          el.get("slug", ""),
-            "titulo":        el.get("titulo", ""),
-            "semantic_type": el.get("semantic_type", "section"),
-            "nivel":         nivel_str,
-            "pai":           pai,
-            "incluir":       bool(el.get("include", True)),
-            "ordem":         contador[0],
-        }
-        contador[0] += 1
-        resultado.append(item)
-
-        # Recursão para elementos filhos
-        filhos = el.get("filhos") or []
-        if filhos:
-            resultado.extend(
-                _aplanar_elementos(filhos, el.get("slug"), contador)
-            )
-    return resultado
-
-
-def parse_estrutura_yaml(conteudo: str) -> list:
-    """Faz parse de estrutura.yaml e devolve lista plana de elementos.
-
-    Usa yaml.safe_load() — sem parser custom.
-    A hierarquia de filhos é aplanada preservando o campo pai.
-    """
-    try:
-        dados = yaml.safe_load(conteudo) or {}
-    except yaml.YAMLError:
-        return []
-
-    elementos_yaml = dados.get("elementos", [])
-    if not isinstance(elementos_yaml, list):
-        return []
-
-    contador = [1]
-    elementos = _aplanar_elementos(elementos_yaml, None, contador)
-    # Filtrar elementos sem slug (mínimo necessário para existir)
-    return [el for el in elementos if el.get("slug")]
-
-
-def parse_mapeamento_yaml(conteudo: str) -> dict:
-    """Faz parse de mapeamento.yaml e devolve dict com meta, elementos e templates.
-
-    Usa yaml.safe_load() — sem parser custom.
-    """
-    try:
-        dados = yaml.safe_load(conteudo) or {}
-    except yaml.YAMLError:
-        return {"meta": {}, "elementos": [], "templates": {}}
-
-    return {
-        "meta": {
-            "doc_id":        dados.get("doc_id", ""),
-            "estrutura_ref": dados.get("estrutura_ref", ""),
-        },
-        "elementos":  dados.get("elementos") or [],
-        "templates":  dados.get("templates") or {},
-    }
-
-
-# ---------------------------------------------------------------------------
-# Leitura de paths a partir do config.yaml (schema novo — campos opcionais)
-# ---------------------------------------------------------------------------
-def ler_paths_config() -> dict:
-    """Tenta ler paths de estrutura e mapeamento do config.yaml.
-
-    Devolve dict com chaves 'estrutura' e 'mapeamento' (strings vazias se ausentes).
-    """
-    config_path = Path(__file__).parent / "config.yaml"
-    try:
-        with open(config_path, encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-        # Suporte a schema novo (campo projecto_activo) e schema antigo
-        proj = cfg.get("projecto_activo", cfg)
-        return {
-            "estrutura":  proj.get("estrutura", ""),
-            "mapeamento": proj.get("mapeamento", ""),
-        }
-    except Exception:
-        return {"estrutura": "", "mapeamento": ""}
-
-
-# ---------------------------------------------------------------------------
 # Limpar chaves de checkbox do session_state (usado antes de import)
 # ---------------------------------------------------------------------------
 def limpar_chaves_checkboxes(elementos: list) -> None:
@@ -328,78 +143,8 @@ def limpar_chaves_checkboxes(elementos: list) -> None:
 
 
 # ===========================================================================
-# CAMADA 1 — EDITOR DE ESTRUTURA: funções auxiliares
+# CAMADA 1 — EDITOR DE ESTRUTURA: funções de renderização UI
 # ===========================================================================
-
-def _obter_tipos(raw: dict) -> list:
-    """Tipos semânticos disponíveis — sempre do registry, nunca do YAML."""
-    return list(SEMANTIC_TYPES)
-
-
-def _todos_slugs(elementos: list) -> list:
-    """Recolhe recursivamente todos os slugs presentes na lista de elementos."""
-    slugs = []
-    for el in elementos:
-        if isinstance(el, dict):
-            s = el.get("slug", "")
-            if s:
-                slugs.append(s)
-            filhos = el.get("filhos") or []
-            if filhos:
-                slugs.extend(_todos_slugs(filhos))
-    return slugs
-
-
-def _auto_slug(elementos: list) -> str:
-    """Gera um slug único no formato elem-NNN."""
-    slugs_existentes = set(_todos_slugs(elementos))
-    i = 1
-    while True:
-        candidato = f"elem-{i:03d}"
-        if candidato not in slugs_existentes:
-            return candidato
-        i += 1
-
-
-def _elemento_vazio(slug: str) -> dict:
-    """Cria um elemento novo com valores por defeito."""
-    return {
-        "slug":          slug,
-        "titulo":        "",
-        "semantic_type": "section",   # era "tipo": "heading"
-        "nivel":         1,
-        "display_order": 0,
-        "include":       True,
-        "filhos":        [],
-    }
-
-
-def _validar_elementos(elementos: list) -> list:
-    """Valida slugs únicos e títulos não vazios. Devolve lista de mensagens de erro."""
-    erros = []
-    slugs = _todos_slugs(elementos)
-    vistos = set()
-    duplicados = set()
-    for s in slugs:
-        if s in vistos:
-            duplicados.add(s)
-        vistos.add(s)
-    for slug in duplicados:
-        erros.append(f"Slug duplicado: **{slug}**")
-
-    def _verificar_titulos(lista: list) -> None:
-        for el in lista:
-            if not isinstance(el, dict):
-                continue
-            if not el.get("titulo", "").strip():
-                erros.append(f"Título vazio no elemento `{el.get('slug', '?')}`")
-            filhos = el.get("filhos") or []
-            if filhos:
-                _verificar_titulos(filhos)
-
-    _verificar_titulos(elementos)
-    return erros
-
 
 def _renderizar_formulario_elemento(el: dict, prefixo: str, tipos: list, elementos_raiz: list) -> None:
     """Renderiza o formulário inline de um elemento (edit in place).
@@ -587,8 +332,8 @@ def _renderizar_elemento(el: dict, profundidade: int, prefixo: str,
 
         if col_filho.button("➕ Filho", key=f"{prefixo}_add_filho"):
             filhos = el.setdefault("filhos", [])
-            novo_slug = _auto_slug(elementos_raiz)
-            filhos.append(_elemento_vazio(novo_slug))
+            novo_slug = auto_slug(elementos_raiz)
+            filhos.append(elemento_vazio(novo_slug))
             st.rerun()
 
         # Confirmação de remoção
@@ -629,66 +374,9 @@ def _renderizar_lista_elementos(lista: list, profundidade: int, prefixo_base: st
         _renderizar_elemento(el, profundidade, prefixo, tipos, elementos_raiz, prefixo_base)
 
 
-def _carregar_estrutura_yaml_ficheiro(caminho: str) -> dict:
-    """Lê e faz parse de um ficheiro estrutura.yaml. Devolve dict ou {}."""
-    try:
-        with open(caminho, encoding="utf-8") as f:
-            dados = yaml.safe_load(f) or {}
-        return dados
-    except Exception:
-        return {}
-
-
-def _guardar_estrutura_yaml_ficheiro(caminho: str, dados: dict) -> tuple:
-    """Serializa e escreve o dict para o ficheiro. Devolve (ok, msg)."""
-    try:
-        pasta = os.path.dirname(caminho)
-        if pasta:
-            os.makedirs(pasta, exist_ok=True)
-        with open(caminho, "w", encoding="utf-8") as f:
-            yaml.dump(dados, f, allow_unicode=True,
-                      default_flow_style=False, sort_keys=False)
-        return True, f"Estrutura guardada em: {caminho}"
-    except Exception as exc:
-        return False, f"Erro ao guardar: {exc}"
-
-
-def _migrar_v1_para_v2(elementos: list) -> None:
-    """Converte campos tipo v1 → semantic_type v2 em todos os elementos (recursivo)."""
-    for el in elementos:
-        if not isinstance(el, dict):
-            continue
-        if "tipo" in el and "semantic_type" not in el:
-            el["semantic_type"] = TIPO_V1_TO_SEMANTIC_TYPE.get(el["tipo"], "section")
-            del el["tipo"]
-        filhos = el.get("filhos") or []
-        if filhos:
-            _migrar_v1_para_v2(filhos)
-
-
 # ---------------------------------------------------------------------------
-# Configuração multi-projecto
+# Carregar projecto — I/O via adapters + actualização de session_state
 # ---------------------------------------------------------------------------
-CONFIG_PATH = Path(__file__).parent / "config.yaml"
-
-
-def carregar_config() -> dict:
-    """Lê config.yaml. Devolve dict vazio se não existir ou estiver corrompido."""
-    try:
-        if CONFIG_PATH.exists():
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                return yaml.safe_load(f) or {}
-    except Exception:
-        pass
-    return {}
-
-
-def guardar_config(config: dict) -> None:
-    """Escreve config.yaml com o estado actualizado."""
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
-
-
 def carregar_projecto(projecto: dict) -> None:
     """
     Carrega estrutura.yaml e mapeamento.yaml do projecto para session_state.
@@ -711,9 +399,8 @@ def carregar_projecto(projecto: dict) -> None:
             path_mapeamento = str(p_cand)
 
     if path_estrutura and Path(path_estrutura).is_file():
-        with open(path_estrutura, "r", encoding="utf-8") as f:
-            raw = yaml.safe_load(f) or {}
-        _migrar_v1_para_v2(raw.get("elementos", []))
+        raw = carregar_estrutura_yaml(path_estrutura)
+        migrar_v1_para_v2(raw.get("elementos", []))
         st.session_state.estrutura_yaml_raw  = raw
         st.session_state.estrutura_yaml_path = path_estrutura
         # Actualizar também a lista plana de elementos usada no TOC
@@ -751,43 +438,8 @@ def carregar_projecto(projecto: dict) -> None:
 
 
 # ===========================================================================
-# CAMADA 2 — MAPEAMENTO: funções auxiliares
+# CAMADA 2 — MAPEAMENTO: renderização UI
 # ===========================================================================
-
-def _obter_elementos_flat(elementos: list, nivel_max: int = 99) -> list:
-    """Percorre a árvore recursivamente e devolve lista plana de todos os
-    elementos com include=True.
-    Cada item: {slug, titulo, semantic_type, nivel, profundidade}
-    """
-    resultado = []
-
-    def _percorrer(lista: list, prof: int) -> None:
-        for el in lista:
-            if el.get("include", True):
-                resultado.append({
-                    "slug":          el.get("slug", ""),
-                    "titulo":        el.get("titulo", ""),
-                    "semantic_type": el.get("semantic_type", "section"),
-                    "nivel":         el.get("nivel", 0),
-                    "profundidade":  prof,
-                })
-                filhos = el.get("filhos", []) or []
-                if filhos:
-                    _percorrer(filhos, prof + 1)
-
-    _percorrer(elementos, 0)
-    return resultado
-
-
-def _mapeamento_por_slug(mapeamento: dict) -> dict:
-    """Converte lista de elementos do mapeamento em dict {slug: {campos}}.
-    Tolerante a mapeamento vazio ou None.
-    """
-    if not mapeamento:
-        return {}
-    elementos = mapeamento.get("elementos", []) or []
-    return {el["slug"]: el for el in elementos if "slug" in el}
-
 
 def _renderizar_camada2(elementos_flat: list, map_actual: dict) -> None:
     """Renderiza o editor de mapeamento: uma linha por elemento.
@@ -810,8 +462,6 @@ def _renderizar_camada2(elementos_flat: list, map_actual: dict) -> None:
         map_el = map_actual.get(slug, {})
 
         # Inicializar widget keys no session_state SE ainda não existirem.
-        # Garante que o primeiro rerun usa os valores do mapeamento,
-        # e reruns seguintes preservam o que o utilizador editou.
         key_md   = f"map_{slug}_md_source"
         key_sc   = f"map_{slug}_md_scope"
         key_tpl  = f"map_{slug}_template"
@@ -829,11 +479,10 @@ def _renderizar_camada2(elementos_flat: list, map_actual: dict) -> None:
 
         with st.expander(
             f"{margem}**{slug}** · *{semantic_type}* — {titulo}",
-            expanded=(st.session_state[key_md] == ""),  # aberto se ainda sem source
+            expanded=(st.session_state[key_md] == ""),
         ):
             col1, col2 = st.columns([3, 1])
 
-            # NÃO passar value= — o Streamlit usa o valor de session_state[key]
             md_source = col1.text_input(
                 "Ficheiro MD (path absoluto)",
                 key=key_md,
@@ -1151,7 +800,7 @@ with st.sidebar:
             # Armazenar YAML em bruto e nome do ficheiro para o editor de estrutura (Camada 1)
             dados_raw = yaml.safe_load(conteudo_est) or {}
             # Compatibilidade retroactiva: converter campos tipo v1 → semantic_type v2
-            _migrar_v1_para_v2(dados_raw.get("elementos", []))
+            migrar_v1_para_v2(dados_raw.get("elementos", []))
             if dados_raw != st.session_state.estrutura_yaml_raw:
                 st.session_state.estrutura_yaml_raw  = dados_raw
                 st.session_state.estrutura_yaml_path = ficheiro_est.name
@@ -1329,7 +978,7 @@ with tab_est:
         ]
         st.dataframe(dados_tipos, width="stretch", hide_index=True)
 
-        tipos = _obter_tipos(raw)
+        tipos = obter_tipos(raw)
         st.divider()
 
         # ── Lista de elementos ────────────────────────────────────────────
@@ -1349,14 +998,14 @@ with tab_est:
 
         # Botão novo elemento no nível raiz
         if st.button("➕ Novo elemento", key="c1_btn_novo_el"):
-            novo_slug = _auto_slug(raw["elementos"])
-            raw["elementos"].append(_elemento_vazio(novo_slug))
+            novo_slug = auto_slug(raw["elementos"])
+            raw["elementos"].append(elemento_vazio(novo_slug))
             st.rerun()
 
         st.divider()
 
         # ── Validação e guardar ───────────────────────────────────────────
-        erros = _validar_elementos(raw.get("elementos", []))
+        erros = validar_elementos(raw.get("elementos", []))
         if erros:
             for msg_erro in erros:
                 st.error(msg_erro)
@@ -1368,7 +1017,7 @@ with tab_est:
             if not path_guardar:
                 st.error("Defina o path de exportação na sidebar antes de guardar.")
             else:
-                ok, msg = _guardar_estrutura_yaml_ficheiro(path_guardar, raw)
+                ok, msg = guardar_estrutura_yaml(path_guardar, raw)
                 if ok:
                     st.success(msg)
                 else:
@@ -1387,7 +1036,7 @@ with tab_map:
         st.stop()
 
     # Obter lista plana de elementos incluídos (include=True), recursivamente
-    elementos_flat = _obter_elementos_flat(
+    elementos_flat = obter_elementos_flat(
         st.session_state.estrutura_yaml_raw.get("elementos", [])
     )
 
@@ -1396,8 +1045,7 @@ with tab_map:
         st.stop()
 
     # Obter mapeamento actual indexado por slug
-    map_actual = _mapeamento_por_slug(st.session_state.get("mapeamento", {}))
+    map_actual = mapeamento_por_slug(st.session_state.get("mapeamento", {}))
 
     # Renderizar editor de mapeamento
     _renderizar_camada2(elementos_flat, map_actual)
-
