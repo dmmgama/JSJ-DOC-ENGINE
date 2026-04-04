@@ -41,23 +41,26 @@ Estado do projecto → `00_GOVERNO\ROADMAP.md`
 
 > **⚠️ REFACTORIZAÇÃO EM CURSO (D15)** — ver `DECISAO-REFACTOR-CLEAN.md`
 
-### Estrutura alvo (Clean Architecture)
+### Estrutura actual (Clean Architecture — Step 1 concluído)
 
 ```
 04_APP\
-├── app.py                          ← 30-50 linhas: config página + routing
-├── core/                           ← lógica pura — ZERO imports streamlit
-│   ├── models.py                   ← dataclasses: Elemento, Projecto, Estrutura
-│   └── services.py                 ← numeração, validação, parse/gerar YAML, aplanar
-├── adapters/                       ← I/O ficheiros — ZERO imports streamlit
-│   ├── yaml_io.py                  ← ler/escrever YAML
-│   └── config.py                   ← ler/escrever config.yaml
-├── ui/                             ← Streamlit vive aqui e SÓ aqui
-│   ├── state.py                    ← init_state(), clear_project_state()
-│   ├── sidebar.py                  ← selecção projecto, criar/apagar
-│   ├── tab_toc.py                  ← Tab TOC interactivo + compilação
-│   ├── tab_estrutura.py            ← Tab editor de estrutura (Camada 1)
-│   └── tab_mapeamento.py           ← Tab mapeamento (Camada 2)
+├── app.py                          ← 1051 linhas: UI + routing (Step 2 partirá em ui/)
+├── core/                           ← lógica pura — ZERO imports streamlit ✅
+│   ├── __init__.py
+│   ├── models.py                   ← elemento_vazio() factory
+│   └── services.py                 ← 9 funções: numeração, slugs, validação, migração, aplanar
+├── adapters/                       ← I/O + serialização — ZERO imports streamlit ✅
+│   ├── __init__.py
+│   ├── yaml_io.py                  ← 7 funções: ler/escrever YAML + gerar/parse estrutura e mapeamento
+│   └── config.py                   ← 3 funções: ler/escrever config.yaml + CONFIG_PATH
+├── ui/                             ← placeholder para Step 2
+│   ├── __init__.py
+│   ├── state.py                    ← (futuro) init_state(), clear_project_state()
+│   ├── sidebar.py                  ← (futuro) selecção projecto, criar/apagar
+│   ├── tab_toc.py                  ← (futuro) Tab TOC interactivo + compilação
+│   ├── tab_estrutura.py            ← (futuro) Tab editor de estrutura (Camada 1)
+│   └── tab_mapeamento.py           ← (futuro) Tab mapeamento (Camada 2)
 ```
 
 ### Ficheiros standalone (sem alteração)
@@ -209,8 +212,8 @@ Ver `00_GOVERNO\ROADMAP.md` para estado detalhado.
 
 | Componente | Estado | Nota |
 |------------|--------|------|
-| **Refactor Step 1** (core/ + adapters/) | ⏳ **← PRÓXIMO** | `PROMPT-IDE-REFACTOR-STEP1.md` |
-| **Refactor Step 2** (ui/ + app.py routing) | ⏳ | `PROMPT-IDE-REFACTOR-STEP2.md` |
+| **Refactor Step 1** (core/ + adapters/) | ✅ **concluído** | `core/models.py`, `core/services.py`, `adapters/yaml_io.py`, `adapters/config.py` |
+| **Refactor Step 2** (ui/ + app.py routing) | ⏳ **← PRÓXIMO** | `PROMPT-IDE-REFACTOR-STEP2.md` |
 | `preprocessor.py` | ✅ funcional | sem alteração |
 | `semantic_type_registry.py` | ✅ criado | sem alteração |
 | `migrate_schema_v1_to_v2.py` | ✅ criado | sem alteração |
@@ -218,7 +221,7 @@ Ver `00_GOVERNO\ROADMAP.md` para estado detalhado.
 | `config.yaml` | ✅ schema multi-projecto | sem alteração |
 | `compile.py` | ⚠️ schema v0 | SUSPENSO até após refactorização |
 
-**Próxima acção:** executar `00_GOVERNO\PROMPT-IDE-REFACTOR-STEP1.md`.
+**Próxima acção:** executar `00_GOVERNO\PROMPT-IDE-REFACTOR-STEP2.md`.
 
 ---
 
