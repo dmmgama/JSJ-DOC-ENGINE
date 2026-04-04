@@ -115,7 +115,7 @@ def _render_seleccao_projecto() -> None:
         set_projecto_carregado(True)
         cfg["last_project"] = proj_sel["id"]
         guardar_config(cfg)
-        st.toast(f"Projecto carregado: {proj_sel['name']}", icon="✅")
+        st.toast(f"Projecto carregado: {proj_sel.get('name', proj_sel.get('id', '?'))}", icon="✅")
         st.rerun()
 
     if col_reimp.button("🔄 Reimportar", width="stretch", key="btn_reimportar_proj"):
@@ -125,7 +125,8 @@ def _render_seleccao_projecto() -> None:
 
     # Apagar (confirmação dois passos)
     if get_confirmar_apagar_proj():
-        st.warning(f"Apagar projecto **{projs[idx_sel]['name']}** e ficheiros do disco?")
+        proj_nome = projs[idx_sel].get('name', projs[idx_sel].get('id', '?'))
+        st.warning(f"Apagar projecto **{proj_nome}** e ficheiros do disco?")
         col_sim, col_nao = st.columns(2)
         if col_sim.button("✅ Sim, apagar", key="btn_confirm_del_proj"):
             proj_a_apagar = projs[idx_sel]
@@ -144,7 +145,7 @@ def _render_seleccao_projecto() -> None:
                 clear_project_state()
                 set_projecto_activo({"id": "", "name": "", "reference_doc": ""})
             set_confirmar_apagar_proj(False)
-            st.toast(f"Projecto apagado: {proj_a_apagar['name']}", icon="✅")
+            st.toast(f"Projecto apagado: {proj_a_apagar.get('name', proj_a_apagar.get('id', '?'))}", icon="✅")
             st.rerun()
         if col_nao.button("❌ Cancelar", key="btn_cancel_del_proj"):
             set_confirmar_apagar_proj(False)
