@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import streamlit; print\\(streamlit.__version__\\)\")",
+      "Bash(pip install:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(ls \"/c/Users/JSJ/JSJ AI/CTE/CTE-TEMPLATE-CLAUDE/estrutura\"*)"
+    ]
+  }
+}

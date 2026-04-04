@@ -1,7 +1,7 @@
 # ROADMAP — JSJ-DOC-ENGINE
 
-> **Versão:** 1.10 — Abril 2026
-> **Estado:** 🟢 Fase 1 concluída — Fase 2 em curso (Camada 3 ✅, D11 YAML ✅, Camada 1 ✅, Schema v2 + Lua filter ⏳ IDE pronto, config.yaml multi-projecto ✅, Camada 2 ✅ executada, compile.py v2 ⏳ IDE pronto, Bugfix app.py ⏳ IDE pronto, LLM Guide v1 ✅)
+> **Versão:** 1.11 — Abril 2026
+> **Estado:** 🟢 Fase 1 concluída — Fase 2 em curso — **⚠️ REFACTORIZAÇÃO CLEAN ARCHITECTURE (D15) É PRIORIDADE ANTES DE QUALQUER FEATURE**
 > **Documento de referência:** `README.md` (raiz)
 
 ---
@@ -41,16 +41,30 @@
 - [x] `semantic_type_registry.py` — registry de 12 tipos, defaults hardcoded, `resolve_behavior()` ✅ executado pelo IDE
 - [x] `filters/pagebreak.lua` — Lua filter: `<!-- pagebreak/sectionbreak/sectionbreak-landscape -->` → OpenXML ✅ executado
 - [x] `migrate_schema_v1_to_v2.py` — script standalone de migração ✅ executado
-- [ ] **Schema v2 — app.py Camada 1 v2**: `semantic_type` enum + editor `behavior` por elemento
-      → Prompt IDE: `PROMPT-IDE-CAMADA1-V2.md` ⏳ **PRONTO PARA EXECUTAR**
+- [x] **Camada 2**: tab Mapeamento MD sources + templates DOCX por elemento ✅ executado
+
+### ⚠️ REFACTORIZAÇÃO CLEAN ARCHITECTURE (D15) — EXECUTAR ANTES DE TUDO
+
+> **app.py atingiu 1.403 linhas** — monólito com 5 responsabilidades misturadas.
+> Todos os prompts IDE pendentes (compile v2, Camada 1 v2, bugfix) ficam **SUSPENSOS**
+> até a refactorização estar completa. Decisão: `DECISAO-REFACTOR-CLEAN.md`
+
+- [ ] **Refactor Step 1**: Extrair `core/` + `adapters/` do app.py
+      → Prompt IDE: `PROMPT-IDE-REFACTOR-STEP1.md` ⏳ **← PRÓXIMO A EXECUTAR**
+- [ ] **Refactor Step 2**: Partir UI em módulos (`ui/state.py`, `ui/sidebar.py`, `ui/tab_*.py`)
+      → Prompt IDE: `PROMPT-IDE-REFACTOR-STEP2.md` ⏳ *(depende Step 1)*
+- [ ] **Gate refactorização**: app funciona identicamente, app.py ≤ 60 linhas, nenhum ficheiro > 300 linhas
+
+### Prompts pendentes (retomar APÓS refactorização)
+
 - [ ] **compile.py v2**: lê `estrutura.yaml` + `mapeamento.yaml` em vez do config v0
-      → Prompt IDE: `PROMPT-IDE-COMPILE-V2.md` ⏳ **PRONTO PARA EXECUTAR** ← **PRÓXIMO**
-- [ ] Migração manual `estrutura.yaml` CTE → v2 (executar `migrate_schema_v1_to_v2.py`) *(depende compile.py v2)*
-- [x] **Camada 2**: tab Mapeamento MD sources + templates DOCX por elemento
-      → Prompt IDE: `PROMPT-IDE-CAMADA2-MVP.md` ✅ executado
+      → Prompt IDE: `PROMPT-IDE-COMPILE-V2.md` ⏳ SUSPENSO
+- [ ] **Schema v2 — Camada 1 v2**: `semantic_type` enum + editor `behavior` por elemento
+      → Prompt IDE: `PROMPT-IDE-CAMADA1-V2.md` ⏳ SUSPENSO
 - [ ] **Bugfix app.py v1**: widget state, apagar projectos, template, paths config
-      → Prompt IDE: `PROMPT-IDE-BUGFIX-APP-V1.md` ⏳ **PRONTO PARA EXECUTAR** ← **PRÓXIMO**
-- [ ] `variaveis.yaml` por projecto + substituição `{{ VARIAVEL }}` no preprocessor.py *(depende config.yaml multi-projecto — já feito)*
+      → Prompt IDE: `PROMPT-IDE-BUGFIX-APP-V1.md` ⏳ SUSPENSO *(muitos bugs serão resolvidos pela refactorização)*
+- [ ] Migração manual `estrutura.yaml` CTE → v2 *(depende compile.py v2)*
+- [ ] `variaveis.yaml` por projecto + substituição `{{ VARIAVEL }}` no preprocessor.py
 - [ ] Função Snapshot (Modo A ficheiro inteiro + Modo B divisão por heading com filhos)
 - [ ] **Gate: Integração app.py → compile.py v2 → DOCX real** *(depende compile.py v2 + Camada 2)*
 
@@ -130,10 +144,12 @@ Tab "Estrutura": carregar ficheiro → metadados → tipos disponíveis (adicion
 |----------|--------|--------|
 | `PROMPT-IDE-SCHEMA-V2.md` | semantic_type_registry.py + migrate + Lua filter + compile.py (stub) | ✅ executado |
 | `PROMPT-IDE-CONFIG-YAML.md` | config.yaml multi-projecto + selectbox na app | ✅ executado |
-| `PROMPT-IDE-CAMADA2-MVP.md` | tab Mapeamento na app | ⏳ aguarda execução |
-| `PROMPT-IDE-CAMADA1-V2.md` | Camada 1 com semantic_type + behavior editor | ⏳ aguarda execução |
-| `PROMPT-IDE-COMPILE-V2.md` | compile.py v2 — lê estrutura.yaml + mapeamento.yaml | ⏳ aguarda execução |
-| `PROMPT-IDE-BUGFIX-APP-V1.md` | Bugfix app.py: widget state, apagar projectos, template, paths | ⏳ **PRONTO PARA EXECUTAR** ← **PRÓXIMO** |
+| `PROMPT-IDE-REFACTOR-STEP1.md` | Extrair core/ + adapters/ do app.py | ⏳ **← PRÓXIMO A EXECUTAR** |
+| `PROMPT-IDE-REFACTOR-STEP2.md` | Partir UI em módulos (ui/state, sidebar, tabs) | ⏳ após Step 1 |
+| `PROMPT-IDE-COMPILE-V2.md` | compile.py v2 — lê estrutura.yaml + mapeamento.yaml | ⏳ SUSPENSO (após refactor) |
+| `PROMPT-IDE-CAMADA1-V2.md` | Camada 1 com semantic_type + behavior editor | ⏳ SUSPENSO (após refactor) |
+| `PROMPT-IDE-CAMADA2-MVP.md` | tab Mapeamento na app | ✅ executado |
+| `PROMPT-IDE-BUGFIX-APP-V1.md` | Bugfix app.py: widget state, apagar projectos, template, paths | ⏳ SUSPENSO (após refactor) |
 
 ---
 
@@ -145,4 +161,4 @@ Cobre: semantic types, regras de slugs, schema mapeamento, padrões de documento
 
 ---
 
-**Fim — ROADMAP.md v1.10 — 2026-04-03**
+**Fim — ROADMAP.md v1.11 — 2026-04-04**

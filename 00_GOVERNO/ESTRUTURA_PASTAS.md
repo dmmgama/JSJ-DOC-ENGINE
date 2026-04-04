@@ -1,6 +1,6 @@
 # ESTRUTURA DE PASTAS — JSJ-DOC-ENGINE
 
-> **Versão:** 1.0 — Abril 2026
+> **Versão:** 1.1 — Abril 2026
 
 ---
 
@@ -27,11 +27,26 @@ JSJ-DOC-ENGINE\
 ├── 03_OUTPUT\                       DOCX compilados (não versionar)
 │
 └── 04_APP\                          Código fonte (VSCode + agente IDE)
-    ├── app.py                       UI Streamlit
+    ├── app.py                       Routing (30-50 linhas pós-refactor D15)
+    ├── core\                        Lógica pura — ZERO imports streamlit
+    │   ├── models.py                Dataclasses: Elemento, Projecto, Estrutura
+    │   └── services.py              Numeração, validação, parse/gerar YAML
+    ├── adapters\                    I/O ficheiros — ZERO imports streamlit
+    │   ├── yaml_io.py               Ler/escrever YAML
+    │   └── config.py                Ler/escrever config.yaml
+    ├── ui\                          Streamlit vive aqui e SÓ aqui
+    │   ├── state.py                 Gestão session_state centralizada
+    │   ├── sidebar.py               Sidebar: projectos, import/export
+    │   ├── tab_toc.py               Tab TOC interactivo
+    │   ├── tab_estrutura.py         Tab editor de estrutura
+    │   └── tab_mapeamento.py        Tab mapeamento
     ├── compile.py                   Orquestrador de compilação
     ├── preprocessor.py              Preprocessador MD (Excel → tabelas MD)
-    ├── config.yaml                  Estrutura do documento activo
+    ├── semantic_type_registry.py    Registry de tipos semânticos
+    ├── config.yaml                  Configuração multi-projecto
     ├── requirements.txt             Dependências Python
+    ├── filters\
+    │   └── pagebreak.lua            Lua filter Pandoc
     └── venv\                        Ambiente virtual (não versionar)
 ```
 
@@ -61,4 +76,4 @@ JSJ-DOC-ENGINE\
 
 ---
 
-**Fim — ESTRUTURA_PASTAS.md v1.0 — 2026-04-03**
+**Fim — ESTRUTURA_PASTAS.md v1.1 — 2026-04-04**

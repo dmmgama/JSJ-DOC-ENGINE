@@ -1,7 +1,7 @@
 # ARQUITECTURA — JSJ-DOC-ENGINE
 
-> **Versão:** 1.4 — Abril 2026
-> **Estado:** Fase 1 concluída — Fase 2 em desenvolvimento (compile.py v2 + Camada 2 pendentes)
+> **Versão:** 1.5 — Abril 2026
+> **Estado:** Fase 1 concluída — Fase 2 em desenvolvimento — **Refactorização Clean Architecture aprovada (D15)**
 
 ---
 
@@ -27,11 +27,27 @@ Pandoc + reference.docx = zero comportamento emergente.
 3 peças independentes e substituíveis:
 - `config.yaml` — estrutura e ordem dos documentos
 - `compile.py` — orquestrador de compilação
-- `app.py` — UI Streamlit
+- `app.py` + `core/` + `ui/` — UI Streamlit (Clean Architecture — ver P6)
 
 Se a app desaparecer → `compile.py` funciona standalone.
 Se `compile.py` desaparecer → Pandoc funciona directamente.
 Se o Supabase (futuro) desaparecer → os MD são a fonte de verdade.
+
+### P6 — Clean Architecture (D15)
+Separação em 3 camadas com regra de dependência unidireccional:
+
+```
+core/  ←  adapters/  ←  ui/  ←  app.py
+```
+
+- **`core/`** — lógica pura Python (models, services). Zero imports de streamlit.
+- **`adapters/`** — I/O de ficheiros (YAML, config). Zero imports de streamlit.
+- **`ui/`** — Streamlit vive aqui e só aqui. Importa de core/ e adapters/.
+- **`app.py`** — 30-50 linhas: config de página + routing.
+
+**Regra inviolável:** `core/` nunca importa `adapters/` ou `ui/`. `adapters/` nunca importa `ui/`.
+
+Decisão completa → `DECISAO-REFACTOR-CLEAN.md`
 
 ### P3 — MD como fonte de verdade
 O conteúdo vive em ficheiros Markdown.
@@ -166,17 +182,36 @@ Path de cada ficheiro definido em `config.yaml` (campo `variaveis:` opcional).
 
 ## 5. ESTRUTURA DE FICHEIROS EM 04_APP
 
+> **⚠️ REFACTORIZAÇÃO EM CURSO (D15)** — a estrutura abaixo é o estado ALVO.
+> Até a refactorização estar completa, o `app.py` monolítico ainda existe.
+> Ver `DECISAO-REFACTOR-CLEAN.md` para mapeamento detalhado.
+
 ```
 04_APP\
-├── app.py                      ← UI Streamlit (3 camadas + snapshot) — Camada 1 v1 + Camada 3 ✅
-├── compile.py                  ← orquestrador de compilação — v2 PENDENTE (prompt IDE pronto)
-├── preprocessor.py             ← tags {{ excel }} e {{ VARIAVEL }} → MD ✅
-├── semantic_type_registry.py   ← registry 12 tipos semânticos + defaults + resolve_behavior() ✅
-├── migrate_schema_v1_to_v2.py  ← script standalone: migra estrutura.yaml v1 → v2 ✅
-├── config.yaml                 ← multi-projecto: defaults + projects[] + last_project ✅
+├── app.py                          ← 30-50 linhas: config página + routing (pós-refactor)
+├── core/
+│   ├── __init__.py
+│   ├── models.py                   ← dataclasses: Elemento, Projecto, Estrutura, Mapeamento
+│   └── services.py                 ← lógica pura: numeração, validação, parse/gerar YAML, aplanar
+├── adapters/
+│   ├── __init__.py
+│   ├── yaml_io.py                  ← ler/escrever estrutura.yaml, mapeamento.yaml, variaveis.yaml
+│   └── config.py                   ← ler/escrever config.yaml, gestão de projectos
+├── ui/
+│   ├── __init__.py
+│   ├── state.py                    ← init_state(), clear_project_state(), get/set helpers
+│   ├── sidebar.py                  ← selecção projecto, criar/apagar, import/export
+│   ├── tab_toc.py                  ← Tab TOC interactivo + compilação
+│   ├── tab_estrutura.py            ← Tab editor de estrutura (Camada 1)
+│   └── tab_mapeamento.py           ← Tab mapeamento (Camada 2)
+├── compile.py                      ← orquestrador de compilação (sem alteração)
+├── preprocessor.py                 ← tags {{ excel }} e {{ VARIAVEL }} → MD ✅
+├── semantic_type_registry.py       ← registry 12 tipos semânticos + defaults + resolve_behavior() ✅
+├── migrate_schema_v1_to_v2.py      ← script standalone: migra estrutura.yaml v1 → v2 ✅
+├── config.yaml                     ← multi-projecto: defaults + projects[] + last_project ✅
 ├── requirements.txt
 ├── filters\
-│   └── pagebreak.lua           ← Lua filter Pandoc: <!-- pagebreak/sectionbreak --> → OpenXML ✅
+│   └── pagebreak.lua               ← Lua filter Pandoc: <!-- pagebreak/sectionbreak --> → OpenXML ✅
 └── venv\
 ```
 
@@ -239,6 +274,7 @@ O utilizador pode sempre adicionar/remover projectos da lista sem apagar ficheir
 | D12b | `section_role` | Inferido do `semantic_type`; overridável por elemento quando necessário | Campo obrigatório manual — ruído no YAML |
 | D13 | compile.py v2 | Lê `estrutura.yaml` + `mapeamento.yaml` via `config.yaml` multi-projecto; arg `--project <id>` | Continuar a usar schema v0 (campos `document`/`paths`/`sections` no config) |
 | D14 | Placeholders {{ VARIAVEL }} | `variaveis.yaml` por projecto; preprocessor.py substitui antes de Pandoc | Embeber valores directamente nos MD |
+| D15 | Refactorização Clean Architecture | 3 camadas (`core/` → `adapters/` → `ui/`) com regra de dependência unidireccional; `app.py` reduzido a routing | Manter monólito / partir só por tabs |
 
 ---
 
@@ -259,20 +295,22 @@ O utilizador pode sempre adicionar/remover projectos da lista sem apagar ficheir
 
 | Componente | Estado | Observação |
 |------------|--------|-----------|
+| **Refactorização Clean Architecture (D15)** | ⏳ **PRÓXIMO** | `PROMPT-IDE-REFACTOR-STEP1.md` → `STEP2.md` — **EXECUTAR ANTES DE QUALQUER OUTRA COISA** |
 | Camada 3 (TOC + export/import) | ✅ funcional | Dados mock → real via Camada 1+2 |
 | Camada 1 v1 (editor estrutura, campo `tipo`) | ✅ funcional | Migrar para semantic_type (prompt pronto) |
 | semantic_type_registry.py | ✅ criado pelo IDE | 12 tipos, resolve_behavior() |
 | filters/pagebreak.lua | ✅ criado pelo IDE | page/section/landscape |
 | migrate_schema_v1_to_v2.py | ✅ criado pelo IDE | |
 | config.yaml multi-projecto | ✅ substituído | CTE-SecI como projecto activo |
-| compile.py v2 | ⏳ prompt pronto | `PROMPT-IDE-COMPILE-V2.md` — **PRÓXIMO A EXECUTAR** |
-| Camada 2 (mapeamento) | ⏳ prompt pronto | `PROMPT-IDE-CAMADA2-MVP.md` |
-| Camada 1 v2 (semantic_type + behavior) | ⏳ prompt pronto | `PROMPT-IDE-CAMADA1-V2.md` |
+| compile.py v2 | ⏳ prompt pronto | `PROMPT-IDE-COMPILE-V2.md` — após refactorização |
+| Camada 2 (mapeamento) | ✅ executado | |
+| Camada 1 v2 (semantic_type + behavior) | ⏳ prompt pronto | `PROMPT-IDE-CAMADA1-V2.md` — após refactorização |
 | variaveis.yaml + preprocessor | ⏳ não iniciado | Após compile.py v2 |
 | Snapshot | ⏳ não iniciado | Fase posterior |
 
-**Bloqueio actual:** compile.py usa schema v0 → sem compilação real até executar PROMPT-IDE-COMPILE-V2.md.
+**Bloqueio actual:** app.py é monólito de 1.403 linhas — refactorizar (D15) ANTES de avançar com features.
+**Bloqueio secundário:** compile.py usa schema v0 → sem compilação real até executar PROMPT-IDE-COMPILE-V2.md.
 
 ---
 
-**Fim — ARQUITECTURA.md v1.4 — 2026-04-03**
+**Fim — ARQUITECTURA.md v1.5 — 2026-04-04**

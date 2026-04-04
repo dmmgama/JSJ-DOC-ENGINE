@@ -69,8 +69,10 @@ No início de cada sessão:
 5. Se desenvolvimento → verificar se já existe prompt IDE em 00_GOVERNO/ antes de criar novo
 6. Perguntar a David se a tarefa não for clara
 
-**Estado actual (sessão anterior):** compile.py v2 é o próximo passo.
-Prompt pronto: `00_GOVERNO/PROMPT-IDE-COMPILE-V2.md`.
+**Estado actual (2026-04-04):** Refactorização Clean Architecture (D15) é PRIORIDADE.
+Prompts prontos: `PROMPT-IDE-REFACTOR-STEP1.md` → `PROMPT-IDE-REFACTOR-STEP2.md`.
+Todos os outros prompts IDE (compile v2, Camada 1 v2, bugfix) estão SUSPENSOS até a refactorização estar completa.
+Decisão: `DECISAO-REFACTOR-CLEAN.md`.
 
 ### SEMPRE:
 
@@ -206,19 +208,37 @@ anti-padrões.
 
 ## ESTRUTURA DE 04_APP (para referência do agente)
 
+> **⚠️ REFACTORIZAÇÃO D15 EM CURSO** — estrutura abaixo é o ALVO.
+> Ver `DECISAO-REFACTOR-CLEAN.md` para mapeamento completo.
+
 ```
 04_APP\
-├── app.py                      ← UI Streamlit — Camada 1 v1 ✅ + Camada 3 ✅ (Camada 2 pendente)
-├── compile.py                  ← ATENÇÃO: ainda schema v0 — v2 pendente (PROMPT-IDE-COMPILE-V2.md)
-├── preprocessor.py             ← {{ excel }} e {{ VARIAVEL }} → MD ✅
-├── semantic_type_registry.py   ← registry 12 tipos + defaults + resolve_behavior() ✅
-├── migrate_schema_v1_to_v2.py  ← migração estrutura.yaml v1 → v2 (standalone) ✅
-├── config.yaml                 ← multi-projecto: defaults + projects[] + last_project ✅
+├── app.py                          ← 30-50 linhas: config página + routing (pós-refactor)
+├── core/
+│   ├── models.py                   ← dataclasses: Elemento, Projecto, Estrutura
+│   └── services.py                 ← lógica pura: numeração, validação, parse/gerar YAML
+├── adapters/
+│   ├── yaml_io.py                  ← ler/escrever YAML
+│   └── config.py                   ← ler/escrever config.yaml
+├── ui/
+│   ├── state.py                    ← gestão session_state centralizada
+│   ├── sidebar.py                  ← sidebar: projectos, import/export
+│   ├── tab_toc.py                  ← Tab TOC interactivo
+│   ├── tab_estrutura.py            ← Tab editor de estrutura
+│   └── tab_mapeamento.py           ← Tab mapeamento
+├── compile.py                      ← ATENÇÃO: ainda schema v0 — v2 SUSPENSO até após refactor
+├── preprocessor.py                 ← {{ excel }} e {{ VARIAVEL }} → MD ✅
+├── semantic_type_registry.py       ← registry 12 tipos + defaults + resolve_behavior() ✅
+├── migrate_schema_v1_to_v2.py      ← migração estrutura.yaml v1 → v2 (standalone) ✅
+├── config.yaml                     ← multi-projecto: defaults + projects[] + last_project ✅
 ├── requirements.txt
 ├── filters\
-│   └── pagebreak.lua           ← Lua filter: <!-- pagebreak/sectionbreak --> → OpenXML ✅
+│   └── pagebreak.lua               ← Lua filter: <!-- pagebreak/sectionbreak --> → OpenXML ✅
 └── venv\
 ```
+
+**Regra de dependência (D15 — inviolável):** `core/` ← `adapters/` ← `ui/` ← `app.py`
+Nunca importar `streamlit` em `core/` ou `adapters/`.
 
 Ficheiros de trabalho por projecto (fora de `04_APP\`, paths em `config.yaml`):
 - `estrutura.yaml`   — schema v2: semantic_type + behavior + filhos[] — reutilizável
@@ -237,10 +257,13 @@ Ficheiros de trabalho por projecto (fora de `04_APP\`, paths em `config.yaml`):
 | 00_GOVERNO/DECISAO-APP-STREAMLIT-v2.md | Arquitectura da app Streamlit (decisão fechada) |
 | 00_GOVERNO/DECISAO-SCHEMA-V2.md | Schema v2 do estrutura.yaml — semantic_type, behavior, registry (D12) |
 | 00_GOVERNO/DECISAO-YAML-ESTRUTURA.md | Porquê YAML em vez de MD (D11) |
-| 00_GOVERNO/PROMPT-IDE-COMPILE-V2.md | Reescrever compile.py — schema v2 ← **PRÓXIMO A EXECUTAR** |
-| 00_GOVERNO/PROMPT-IDE-CAMADA2-MVP.md | Tab Mapeamento na app |
-| 00_GOVERNO/PROMPT-IDE-BUGFIX-APP-V1.md | Bugfix app.py: widget state, apagar projectos, template, paths ← **PRÓXIMO** |
-| 00_GOVERNO/PROMPT-IDE-CAMADA1-V2.md | Camada 1 com semantic_type + behavior |
+| 00_GOVERNO/DECISAO-REFACTOR-CLEAN.md | **D15** — Refactorização Clean Architecture (DECISÃO ACTIVA) |
+| 00_GOVERNO/PROMPT-IDE-REFACTOR-STEP1.md | Extrair core/ + adapters/ do app.py ← **PRÓXIMO A EXECUTAR** |
+| 00_GOVERNO/PROMPT-IDE-REFACTOR-STEP2.md | Partir UI em módulos (ui/) ← após Step 1 |
+| 00_GOVERNO/PROMPT-IDE-COMPILE-V2.md | Reescrever compile.py — schema v2 — SUSPENSO |
+| 00_GOVERNO/PROMPT-IDE-CAMADA2-MVP.md | Tab Mapeamento na app — ✅ executado |
+| 00_GOVERNO/PROMPT-IDE-BUGFIX-APP-V1.md | Bugfix app.py — SUSPENSO |
+| 00_GOVERNO/PROMPT-IDE-CAMADA1-V2.md | Camada 1 com semantic_type + behavior — SUSPENSO |
 | 00_GOVERNO/LLM_GUIDE.md | Contrato de interface para LLMs — schema, tipos, regras |
 | 00_GOVERNO/PROMPT-IDE-SCHEMA-V2.md | Schema v2 completo (registry + Lua + migrate) — já executado |
 | 00_GOVERNO/PROMPT-IDE-CONFIG-YAML.md | config.yaml multi-projecto — já executado |
@@ -267,5 +290,5 @@ A secção "10. ESTADO ACTUAL" deve reflectir sempre o ROADMAP actual.
 
 ---
 
-**Criado:** 2026-04-03 | **Actualizado:** 2026-04-03 (v1.4) | **Agente:** Cowork Governo
+**Criado:** 2026-04-03 | **Actualizado:** 2026-04-04 (v1.5) | **Agente:** Cowork Governo
                                                                             
